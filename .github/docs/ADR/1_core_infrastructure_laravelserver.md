@@ -50,6 +50,7 @@ The local Step 1 backend is implemented with the following architectural decisio
 - `POST /api/invitations` is guarded by `auth:sanctum` and `hardware.signature`.
 - Invitation OTPs are generated as 4-digit codes and stored only as SHA-256 hashes.
 - `POST /api/verify` accepts phone number, OTP, and escort public key, then issues a Sanctum token for the escort device.
+- `POST /api/protected/ping` exists as the initial middleware-protected probe route for validating the signed-request path end to end.
 
 ### Messaging And Broadcasting
 
@@ -86,3 +87,11 @@ Step 1 was validated with three layers of checks:
 - Local development keeps simple PostgreSQL credentials for convenience.
 - Production should replace local bootstrap flows and trivial credentials with a stricter deployment model.
 - Real SMS and realtime operations require valid provider credentials and running worker/server processes.
+
+## Future Development Carry-Forwards
+
+- Treat SMS OTP as onboarding proof of phone-number control only, not as a durable trust anchor for sensitive actions.
+- Define a production retention and redaction policy for invitations, phone numbers, public keys, queue payloads, logs, and backups before processing live user data.
+- Review queue payload exposure and logging defaults before production so notification metadata and invitation events do not leak through debug or worker logs.
+- Keep the landlord bootstrap token endpoint restricted to `local` and `testing`; production needs a separate enrollment flow.
+- Prepare explicit runbooks for queue workers and Reverb so manual and future staging validation use a consistent operational setup.
