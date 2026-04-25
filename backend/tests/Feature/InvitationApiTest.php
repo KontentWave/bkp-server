@@ -79,6 +79,38 @@ class InvitationApiTest extends TestCase
     }
 
     #[Test]
+    public function browser_invitation_creation_accepts_authenticated_landlord_without_hardware_signature(): void
+    {
+        Notification::fake();
+
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+
+        $tokenResponse = $this->postJson('/api/landlords/tokens', [
+            'public_key' => $publicKey,
+            'device_name' => 'chrome-trust-anchor',
+        ]);
+
+        $tokenResponse->assertCreated();
+
+        $landlordId = $tokenResponse->json('data.landlord_id');
+        $token = $tokenResponse->json('data.token');
+
+        $response = $this->withToken($token)->postJson('/api/browser/invitations', [
+            'phone_number' => '+421900111222',
+        ]);
+
+        $response->assertCreated();
+
+        $this->assertDatabaseHas('invitations', [
+            'landlord_id' => $landlordId,
+            'phone_number' => '+421900111222',
+            'status' => InvitationStatus::Pending->value,
+        ]);
+
+        Notification::assertSentOnDemand(InvitationSmsNotification::class);
+    }
+
+    #[Test]
     public function otp_verification_stores_public_key_and_returns_token(): void
     {
         $landlord = Landlord::query()->create();

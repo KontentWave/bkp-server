@@ -67,23 +67,23 @@
   2. **Manifest Configuration:** Set manifest version to 3. Request permissions for `contextMenus`, `storage` (to save the Landlord's Sanctum token), and `activeTab`. Declare host permissions strictly for `*://*.amaterky.sk/*` and your Laravel backend URL.
   3. **Authentication (Popup UI):** \* Create a simple `popup.html` interface where the landlord can paste their Laravel Sanctum Bearer Token (generated via the local bootstrap endpoint for now).
      - Use `chrome.storage.local` to securely persist this token.
+     - Provide a local `Send test invite` button so the browser-safe endpoint can be verified from the popup before testing the page-selection context menu on `amaterky.sk`.
   4. **Context Menu Injection:** \* In `background.js`, use `chrome.contextMenus.create` to add a "Pozvať do BKP" option.
      - Configure it so it only appears when text is highlighted (`contexts: ["selection"]`) and only on `amaterky.sk` URLs (`documentUrlPatterns`).
   5. **API Communication:**
      - Listen for the `chrome.contextMenus.onClicked` event.
      - Extract the highlighted text (`info.selectionText`) and sanitize it (strip spaces, ensure `+421` or standard format).
      - Retrieve the Sanctum token from storage.
-      - Execute a `fetch()` POST request to a dedicated browser-safe invitation endpoint with the token in the `Authorization: Bearer` header and the phone number in the payload.
+     - Execute a `fetch()` POST request to a dedicated browser-safe invitation endpoint with the token in the `Authorization: Bearer` header and the phone number in the payload.
 - **Implementation Order:**
   1.  Create the client workspace directories so Chrome and iOS stay physically separated from the start.
   2.  Scaffold the Chrome extension in `tools/chrome-trust-anchor/` with MV3 manifest, popup, background worker, and a small shared sanitization utility.
   3.  Validate the popup token storage flow before wiring invitation calls.
-  4.  Wire the context-menu-driven invitation flow against the existing Laravel `/api/invitations` endpoint using the stored bearer token.
   4.  Add a dedicated browser-safe invitation endpoint because the current `/api/invitations` route is protected by `hardware.signature` and is not directly callable from the Chrome extension.
-  5.  Wire the context-menu-driven invitation flow against that browser-safe endpoint using the stored bearer token.
+  5.  Wire the popup test action and the context-menu-driven invitation flow against that browser-safe endpoint using the stored bearer token.
   6.  Reserve the iOS extension directory only; do not couple its native extension code to the Chrome extension implementation.
 - **Accessibility (ARIA):**
-  - In `popup.html`, ensure the input field has `aria-label="Sanctum Bearer Token"` and the save button has `role="button"` and `tabindex="0"`.
+  - In `popup.html`, ensure the popup fields have visible labels and the status area announces invite results via `aria-live`.
 - **Test Plan:**
   - `test_phone_number_sanitization`: Unit test the regex/function that cleans the highlighted text.
   - `manual_e2e_storage`: Verify pasting a token into the popup correctly saves to `chrome.storage.local`.
@@ -94,3 +94,4 @@
 - The Chrome Trust Anchor is intentionally standalone because its runtime, packaging, permissions, and release flow are unrelated to the iOS share extension.
 - The iOS Trust Anchor should remain inside the future React Native app because it is distributed as part of the iOS client rather than as an independent desktop/browser deliverable.
 - For Step 2.1, bearer-token authentication is the practical bridge to the backend, but it needs a dedicated browser-safe invitation route because the current `/api/invitations` endpoint also requires hardware-backed signing.
+- Local validation now covers both popup-based invite submission and the real queue-backed SMS delivery path with Vonage configured in the local environment.

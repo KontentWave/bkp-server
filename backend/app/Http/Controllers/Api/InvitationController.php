@@ -15,6 +15,16 @@ class InvitationController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
+        return $this->storeInvitation($request);
+    }
+
+    public function storeFromBrowser(Request $request): JsonResponse
+    {
+        return $this->storeInvitation($request);
+    }
+
+    private function storeInvitation(Request $request): JsonResponse
+    {
         $landlord = $request->user();
 
         if (! $landlord instanceof Landlord) {
