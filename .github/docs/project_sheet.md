@@ -57,6 +57,9 @@
 
 ## Step 2.1: The Trust Anchor (Chrome Extension for Landlords)
 
+- **Status:** Completed for local development on April 25, 2026.
+- **Detailed Documentation:** See [ADR/2_chrome_trust_anchor.md](ADR/2_chrome_trust_anchor.md).
+
 - **Action:** Build a standalone Chrome Manifest V3 extension that allows landlords on desktop to highlight phone numbers on `amaterky.sk` and securely trigger the backend invitation process.
 - **Planned Client Workspace Layout:**
   - `bkp-client/tools/chrome-trust-anchor/` for the standalone Chrome extension.
@@ -68,7 +71,7 @@
   3. **Authentication (Popup UI):** \* Create a simple `popup.html` interface where the landlord can paste their Laravel Sanctum Bearer Token (generated via the local bootstrap endpoint for now).
      - Use `chrome.storage.local` to securely persist this token.
      - Provide a local `Send test invite` button so the browser-safe endpoint can be verified from the popup before testing the page-selection context menu on `amaterky.sk`.
-  4. **Context Menu Injection:** \* In `background.js`, use `chrome.contextMenus.create` to add a "Pozvať do BKP" option.
+  4. **Context Menu Injection:** \* In `background.js`, use `chrome.contextMenus.create` to add a "Pozvat do BKP" option.
      - Configure it so it only appears when text is highlighted (`contexts: ["selection"]`) and only on `amaterky.sk` URLs (`documentUrlPatterns`).
   5. **API Communication:**
      - Listen for the `chrome.contextMenus.onClicked` event.
@@ -87,7 +90,20 @@
 - **Test Plan:**
   - `test_phone_number_sanitization`: Unit test the regex/function that cleans the highlighted text.
   - `manual_e2e_storage`: Verify pasting a token into the popup correctly saves to `chrome.storage.local`.
-  - `manual_e2e_invitation_flow`: Load unpacked extension, highlight a mock number on the target URL, click the context menu, and verify via Laravel logs/DB that the `/api/invitations` endpoint received the authenticated request.
+  - `manual_e2e_invitation_flow`: Load unpacked extension, highlight a mock number on the target URL, click the context menu, and verify via Laravel logs/DB that the `/api/browser/invitations` endpoint received the authenticated request.
+
+### Step 2.1 Implementation Outcome
+
+- Chrome Manifest V3 trust-anchor workspace is implemented in `bkp-client/tools/chrome-trust-anchor/` with manifest, popup UI, background worker, and shared phone sanitization utility.
+- The popup now persists the backend URL and Sanctum bearer token in `chrome.storage.local` and supports a local `Send test invite` flow.
+- The context menu is restricted to selected text on `amaterky.sk` pages and dispatches authenticated invitation requests through the dedicated browser-safe endpoint.
+- Invite feedback is surfaced both through the extension badge and the popup, including a transient success state after manual invite submission.
+- Local validation completed through focused Node tests for phone sanitization plus manual backend invite verification against the Laravel browser-safe route.
+
+### Step 2.1 Remaining Operational Notes
+
+- Completion here means local development readiness, not live-market validation with real landlord and escort data.
+- A production-like smoke test with real target-site content is still advisable before treating the desktop trust anchor as field-ready.
 
 ### Step 2.1 Notes
 
