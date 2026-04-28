@@ -58,7 +58,7 @@
 ## Step 2.1: The Trust Anchor (Chrome Extension for Landlords)
 
 - **Status:** Completed for local development on April 25, 2026.
-- **Detailed Documentation:** See [ADR/2_chrome_trust_anchor.md](ADR/2_chrome_trust_anchor.md).
+- **Detailed Documentation:** See [ADR/2_1_chrome_trust_anchor.md](ADR/2_1_chrome_trust_anchor.md).
 
 - **Action:** Build a standalone Chrome Manifest V3 extension that allows landlords on desktop to highlight phone numbers on `amaterky.sk` and securely trigger the backend invitation process.
 - **Planned Client Workspace Layout:**
@@ -111,3 +111,43 @@
 - The iOS Trust Anchor should remain inside the future React Native app because it is distributed as part of the iOS client rather than as an independent desktop/browser deliverable.
 - For Step 2.1, bearer-token authentication is the practical bridge to the backend, but it needs a dedicated browser-safe invitation route because the current `/api/invitations` endpoint also requires hardware-backed signing.
 - Local validation now covers both popup-based invite submission and the real queue-backed SMS delivery path with Vonage configured in the local environment.
+
+## Step 2.2: The Trust Anchor (iOS Share Extension via React Native)
+
+- **Status:** Completed for local development on April 28, 2026.
+- **Detailed Documentation:** See [ADR/2_2_ios_trust_anchor.md](ADR/2_2_ios_trust_anchor.md).
+- **Action:** Initialize the React Native Expo mobile app and prepare the iOS Share Extension path that will capture phone numbers highlighted in Safari.
+- **Task:**
+  1. **Initialize Project:** Scaffold the Expo TypeScript app directly under `bkp-client/apps/mobile-app/` on the Windows-backed drive so Metro and device networking stay compatible.
+  2. **Share Extension Plugin:**
+     - Install a community plugin such as `expo-share-intent` or replace it with a custom Expo Config Plugin if the package proves too limiting during prebuild.
+  3. **App Configuration (`app.json` / Expo config):**
+     - Define the iOS bundle identifier.
+     - Configure the Share Extension target to accept plain-text payloads (`public.plain-text`).
+     - Use a share-extension target name distinct from the main app target name so EAS credential mapping does not confuse the app profile with the extension profile.
+  4. **React Native Receiver Logic:**
+     - Add the first receiver slice that can accept shared text, surface it inside the app, and reuse the same phone-number sanitization rules as the Chrome Trust Anchor.
+  5. **Invitation Payload Drafting:**
+     - Because `POST /api/invitations` is still protected by `auth:sanctum` plus `hardware.signature`, Step 2.2 should only prepare the sanitized request payload and local invitation draft.
+     - The actual signed request send belongs to Step 3, when the native hardware-signing layer is implemented.
+- **Development Environment Note:**
+  - Keep the mobile app on the Windows-backed drive, but use a Windows terminal for `npm install`, `expo start`, and `expo prebuild` so Metro, Expo tooling, and future Android/iOS integration stay in one runtime environment.
+  - Windows prebuild currently materializes the Android native project and share-intent filters, but it does not generate a local `ios/` project in this environment. The actual iOS share-extension target still needs a macOS/Xcode or EAS-based path for native inspection and device validation.
+- **Accessibility (ARIA):**
+  - Use React Native accessibility props such as `accessible={true}` and a clear `accessibilityLabel` on the share-confirmation surface.
+- **Test Plan:**
+  - `test_share_intent_configuration`: Verify Expo config generates the Android share filters on Windows `npx expo prebuild`, then verify the iOS share target from a macOS/Xcode-capable environment.
+  - `test_phone_number_sanitization`: Unit test the shared text-cleaning logic.
+  - `manual_e2e_safari_share`: Install a development build later, highlight text in Safari, open the BKP share target, and verify the app receives and sanitizes the shared payload.
+
+### Step 2.2 Implementation Outcome
+
+- The Expo TypeScript mobile app is scaffolded in `bkp-client/apps/mobile-app/` and uses `expo-share-intent` to register the BKP iOS share target.
+- The app now receives native share payloads, normalizes phone numbers with the shared sanitizer, and prepares a local invitation draft pointing at `/api/invitations`.
+- EAS iOS device builds now provision both the main app target and the share-extension target correctly after separating their target names.
+- On-device validation succeeded on iPhone 11: sharing note content into BKP delivered `0900111222` into the app as a native share intent and produced the sanitized draft `+421900111222` for `POST /api/invitations`.
+
+### Step 2.2 Remaining Operational Notes
+
+- In Apple Notes, the successful content-share path is `Send Copy` (`Poslať kópiu`), not the default collaboration-link path (`Spolupracovať`).
+- Step 2.2 stops at preparing the signed-route draft; the actual native hardware signature and request submission still belong to Step 3.
