@@ -151,3 +151,69 @@
 
 - In Apple Notes, the successful content-share path is `Send Copy` (`Poslať kópiu`), not the default collaboration-link path (`Spolupracovať`).
 - Step 2.2 stops at preparing the signed-route draft; the actual native hardware signature and request submission still belong to Step 3.
+
+## Step 3: The Secure Client Apps (React Native via Expo)
+
+- **Action:** Implement the shared mobile security foundation once, then complete the iOS and Android platform layers separately where hardware signing, screen-capture behavior, and native key storage differ.
+- **Shared Cross-Platform Tasks:**
+  1. **Cryptographic Contract Definition:**
+  - Freeze the exact signing contract before writing native code: curve `secp256r1`, exported public-key format, signature encoding, and canonical payload format.
+  - Match the backend middleware contract exactly: `Timestamp + Nonce + Method + Path + BodyHash`, joined by newlines, where `Path` includes the query string and `BodyHash` is `sha256(request body)`.
+  2. **Shared TypeScript Security Layer:**
+  - Define a common `SecureSigner` interface in TypeScript for `generateKeyPair`, `getPublicKey`, and `signCanonicalPayload`.
+  - Build a shared canonical-payload builder and body-hash utility so iOS and Android feed the native signer identically.
+  3. **Device Registration & Authentication Flow:**
+  - Build the Escort onboarding UI: Enter phone number -> Receive SMS OTP -> Enter OTP.
+  - On OTP submit: generate the hardware-bound EC key pair through the platform signer, send the OTP plus `public_key` to `/api/verify`, and store the returned Laravel Sanctum bearer token in `expo-secure-store`.
+  - Keep the private key inside the native hardware-backed store; only the session token lives in `expo-secure-store`.
+  4. **Secure API Interceptor (Axios/Fetch):**
+  - Build an HTTP interceptor that secures every protected `/api/*` request.
+  - Inject `Authorization: Bearer <Sanctum-Token>`.
+  - Generate a unique UUID for `X-Hardware-Nonce` and the current Unix timestamp for `X-Hardware-Timestamp`.
+  - Construct the canonical payload, sign it through the platform signer, and attach `X-Hardware-Signature`.
+  5. **Zero App-Managed Data At Rest:**
+  - Configure the HTTP client to request non-cached responses (`Cache-Control: no-store`).
+  - Install `expo-image` and use memory-only caching for sensitive images wherever the library permits.
+  - Ensure no sensitive message, profile, or media payloads are written by the app to `AsyncStorage`, SQLite, or another explicit persistent store.
+  6. **WebSockets (Laravel Reverb):**
+  - Install `laravel-echo` and `pusher-js`.
+  - Configure the Echo client to connect to the Reverb server.
+  - Override the Echo `authorizer` so the `/broadcasting/auth` handshake goes through the Secure API Interceptor and is hardware-signed before the socket is established.
+- **iOS-Specific Tasks:**
+  1. **Secure Enclave Signer Module:**
+  - Implement an Expo local module in Swift that creates and uses a Secure Enclave-backed `secp256r1` key when the device permits silent signing after unlock.
+  - Export the public key in the exact format accepted by Laravel and return base64 signatures in the agreed encoding.
+  2. **Share-Intent Completion Path:**
+  - Keep the current Step 2.2 handoff model: the share target delivers the sanitized payload into the BKP host app, and the host app performs the signed `POST /api/invitations` request.
+  - Update the invitation drafting flow to use the shared Secure API Interceptor and successfully dispatch the hardware-signed invite request.
+  3. **Screen-Capture Mitigation:**
+  - Install `expo-screen-capture` and enable iOS capture-detection handling.
+  - Treat iOS protection as best-effort visual shielding or redaction, not as the same hard OS block that Android provides with `FLAG_SECURE`.
+- **Android-Specific Tasks:**
+  1. **KeyMint / Android Keystore Signer Module:**
+  - Implement the Expo local module in Kotlin using Android Keystore / KeyMint-backed `secp256r1` keys with silent signing after device unlock.
+  - Match the same TypeScript signer interface and public-key export format used on iOS.
+  2. **Screen-Capture Blocking:**
+  - Install `expo-screen-capture` and enforce `FLAG_SECURE` on sensitive screens to block screenshots and screen recording at the OS level.
+  3. **Parity Validation:**
+  - Validate that Android-generated public keys and signatures verify against the same Laravel middleware and canonical-payload builder used by iOS.
+- **Accessibility (ARIA):**
+  - Use `accessibilityLabel`, `accessibilityHint`, and `accessible={true}` for all onboarding inputs (Phone Number, OTP) and buttons.
+  - Ensure error states (invalid OTP, network error) are announced to screen readers using `accessibilityLiveRegion`.
+  - Keep the iOS share-result confirmation screen and the Android onboarding screens aligned on the same spoken labels and error semantics.
+- **Test Plan:**
+  - `test_canonical_payload_builder`: Unit test to ensure the generated string matches the Laravel middleware contract exactly.
+  - `test_interceptor_injects_headers`: Unit test mocking the HTTP client to ensure the Nonce, Timestamp, Sanctum Token, and Signature headers are attached.
+  - `manual_e2e_escort_onboarding_ios`: Run on iOS device, complete the OTP flow, verify the public key is saved in PostgreSQL, and confirm the bearer token is stored while the private key remains hardware-bound.
+  - `manual_e2e_escort_onboarding_android`: Run on Android device and verify the same onboarding and key-registration contract.
+  - `manual_e2e_reverb_auth_ios`: Connect to a private Echo channel from iOS and verify the backend accepts the hardware-signed auth request.
+  - `manual_e2e_reverb_auth_android`: Connect to a private Echo channel from Android and verify the same signed auth path.
+  - `manual_e2e_screenshot_block_ios`: Attempt capture on iOS and verify the app applies its best-effort privacy shield or redaction behavior.
+  - `manual_e2e_screenshot_block_android`: Attempt capture on Android and verify `FLAG_SECURE` blocks or blanks the capture.
+  - `manual_e2e_signed_share_invite_ios`: Share a sanitized number from Safari into BKP on iOS and verify the host app submits a hardware-signed `POST /api/invitations` request.
+
+---
+
+### A Quick Architecture Check Before You Code
+
+The critical architectural boundary is still Task 1, but it should now be treated as one shared TypeScript contract backed by two native implementations: a Swift Secure Enclave signer for iOS and a Kotlin KeyMint / Android Keystore signer for Android. Standard Expo still does not provide an off-the-shelf silent hardware EC signer for this use case, so a small **Expo Local Module** remains the expected implementation path.
