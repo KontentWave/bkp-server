@@ -155,6 +155,7 @@
 ## Step 3: The Secure Client Apps (React Native via Expo)
 
 - **Action:** Implement the shared mobile security foundation once, then complete the iOS and Android platform layers separately where hardware signing, screen-capture behavior, and native key storage differ.
+- **Detailed Documentation:** See [ADR/3_secure_client_signer_contract.md](ADR/3_secure_client_signer_contract.md).
 - **Shared Cross-Platform Tasks:**
   1. **Cryptographic Contract Definition:**
   - Freeze the exact signing contract before writing native code: curve `secp256r1`, exported public-key format, signature encoding, and canonical payload format.
