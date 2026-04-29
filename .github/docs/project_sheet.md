@@ -154,6 +154,7 @@
 
 ## Step 3: The Secure Client Apps (React Native via Expo)
 
+- **Status:** Partially completed for the validated iOS landlord slice on April 29, 2026.
 - **Action:** Implement the shared mobile security foundation once, then complete the iOS and Android platform layers separately where hardware signing, screen-capture behavior, and native key storage differ.
 - **Detailed Documentation:** See [ADR/3_secure_client_signer_contract.md](ADR/3_secure_client_signer_contract.md).
 - **Shared Cross-Platform Tasks:**
@@ -218,3 +219,30 @@
 ### A Quick Architecture Check Before You Code
 
 The critical architectural boundary is still Task 1, but it should now be treated as one shared TypeScript contract backed by two native implementations: a Swift Secure Enclave signer for iOS and a Kotlin KeyMint / Android Keystore signer for Android. Standard Expo still does not provide an off-the-shelf silent hardware EC signer for this use case, so a small **Expo Local Module** remains the expected implementation path.
+
+### Step 3 Implementation Outcome
+
+- The shared TypeScript signer contract, canonical payload builder, hardware-signature header assembly, and secure device-token storage are implemented.
+- The iOS local Expo module now provisions and uses a Secure Enclave-backed `secp256r1` signing key that matches the Laravel verification contract.
+- Landlord device onboarding is implemented through `POST /api/landlords/tokens`, and the returned Sanctum bearer token is stored in `expo-secure-store` while the private key remains inside Secure Enclave.
+- On-device validation succeeded on iPhone 11 for three invitation sources: manual input, Apple Notes native share, and Safari selected-text share.
+- Each validated source successfully produced a hardware-signed `POST /api/invitations` request, Laravel created the invitation row, the queue worker processed the notification, and Vonage delivered a real SMS to a live handset.
+
+### Step 3 Remaining Operational Notes
+
+- Local iPhone testing against a WSL-hosted Laravel server requires Windows LAN exposure of the backend, including a `netsh interface portproxy` rule from the Windows LAN IP to the current WSL IP on port `8000`.
+- Local manual testing still requires three active processes: Laravel (`php artisan serve --host=0.0.0.0 --port=8000`), Metro (`npx expo start --dev-client --clear`), and a queue worker (`php artisan queue:work`) when verifying SMS delivery.
+- Vonage API SMS delivery is proven working, but the Vonage web dashboard currently returns `403 AccessDenied` after MFA; treat that as a dashboard issue, not as a blocker for the BKP invitation pipeline.
+
+### Step 3 Remaining Scope
+
+- Android KeyMint / Keystore signing, Android screenshot blocking, and Android interoperability validation are still pending.
+- Escort OTP onboarding through `/api/verify` remains future Step 3 scope and has not yet been validated on device.
+- Reverb authorization through the signed mobile client and screenshot/capture mitigation behavior are still pending manual validation.
+
+### Step 3 Product Gap
+
+- The current Step 3 outcome is a validated security and transport skeleton for the iOS landlord path, not a user-ready MVP surface.
+- The app currently behaves as a workflow demonstrator for onboarding, share intake, and signed invitation submission rather than as a production-shaped landlord or escort experience.
+- The next implementation focus should move from proving the cryptographic boundary to building real product UI and UX on top of the validated iOS landlord foundation.
+- That next slice should include a proper landlord entry flow, a stable invitation/send experience, and the first escort-facing onboarding UX before treating the mobile app as MVP-complete.

@@ -3,6 +3,31 @@ Feature: Secure Mobile Client and Hardware Cryptography
   As a verified Landlord or an invited Escort
   I want my mobile app to bind to my device's hardware, sign all requests silently, and strictly prevent local data storage
 
+  # Validated iOS landlord slice on iPhone 11 (April 29, 2026)
+  Scenario: iOS landlord securely provisions a Secure Enclave signing key and bootstrap token
+    Given the Landlord opens BKP on a real iOS device
+    When the Landlord starts device onboarding in the BKP host app
+    Then the app should trigger iOS to generate a Secure Enclave-backed Elliptic Curve (EC) key pair
+    And the app should send the generated "public_key" to "/api/landlords/tokens"
+    And the app should securely persist the returned Sanctum Bearer token in the encrypted device keychain
+    And the private key must remain permanently locked inside the Secure Enclave
+
+  Scenario Outline: iOS landlord submits a hardware-signed invitation from validated host-app sources
+    Given the Landlord device is already onboarded on iOS
+    And the BKP host app receives a sanitized phone number from <source>
+    When the app finishes drafting the invitation request for "/api/invitations"
+    Then the BKP host app must process the drafted request through the Secure API Interceptor
+    And the host app must hardware-sign the request silently after the share handoff
+    And the backend should accept the request and dispatch the Vonage SMS
+
+    Examples:
+      | source               |
+      | manual input         |
+      | Apple Notes share    |
+      | Safari selected text |
+
+  # Remaining Step 3 scope below is still planned behavior and has not yet been fully validated on device.
+
   Scenario: iOS escort securely onboards and binds a Secure Enclave hardware key
     Given the Escort has received an invitation SMS with an OTP on iOS
     When the Escort enters their phone number and the valid OTP into the BKP app

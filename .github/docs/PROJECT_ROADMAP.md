@@ -47,6 +47,19 @@ _The smallest version of the software that can provide core value and validate t
   - **Real-time Comms:** Authenticated WebSocket connection to Laravel Reverb for instant messaging.
   - _Distribution:_ Ad Hoc `.ipa` via Expo EAS for iOS (Landlords); direct `.apk` sideload for Android (Girls).
 
+### Step 3 Current Validation Snapshot
+
+- The iOS landlord slice is now validated on-device on iPhone 11 with a Secure Enclave-backed signer.
+- Landlord device onboarding, bearer-token storage, and hardware-signed invitation submission are working from manual input, Apple Notes share, and Safari selected-text share.
+- Laravel invitation persistence, queued notification processing, and real Vonage SMS delivery are all proven working in local development.
+- Remaining Step 3 work is primarily Android parity, escort OTP onboarding, Reverb authorization, and capture-mitigation validation.
+
+### Step 3 Current Product Assessment
+
+- The mobile client is currently a verified security workflow demonstrator, not yet the user-facing MVP experience.
+- The next high-value move is to build real landlord and escort UI and UX on top of the proven iOS landlord security path rather than spending more time re-proving the already validated invitation skeleton.
+- Phase 1 should therefore continue with productizing the validated secure flows before moving attention to broader Phase 2 enhancements.
+
 ---
 
 ## Phase 2: Core Enhancements
