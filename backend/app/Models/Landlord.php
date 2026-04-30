@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\FlatReport;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -27,5 +28,20 @@ class Landlord extends Authenticatable
     public function invitations(): HasMany
     {
         return $this->hasMany(Invitation::class);
+    }
+
+    public function flats(): HasMany
+    {
+        return $this->hasMany(\App\Models\Flat::class);
+    }
+
+    public function submittedReports(): HasMany
+    {
+        return $this->hasMany(FlatReport::class, 'reporter_landlord_id');
+    }
+
+    public function receivedReports(): HasMany
+    {
+        return $this->hasMany(FlatReport::class, 'reported_landlord_id');
     }
 }

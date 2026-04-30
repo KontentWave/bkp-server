@@ -1,0 +1,725 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Enums\InvitationStatus;
+use App\Enums\EscortReportReason;
+use App\Enums\LandlordReportReason;
+use App\Models\Escort;
+use App\Models\Flat;
+use App\Models\FlatReport;
+use App\Models\Invitation;
+use App\Models\Landlord;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+class FlatGalleryApiTest extends TestCase
+{
+    use RefreshDatabase;
+
+    #[Test]
+    public function flat_creation_requires_landlord_role(): void
+    {
+        [$privateKey, $escort] = $this->createEscortSession('+421900111000');
+
+        $payload = [
+            'title' => 'Old Town Loft',
+            'description' => 'Top floor with balcony.',
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->withToken($escort->createToken('escort-device-secondary')->plainTextToken)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats', $payload);
+
+        $response->assertForbidden()->assertJsonPath('message', 'Only landlords can create flats.');
+        $this->assertDatabaseCount('flats', 0);
+    }
+
+    #[Test]
+    public function flat_gallery_scope_requires_approved_access(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111222');
+        $allowedLandlord = Landlord::query()->create(['is_verified' => true]);
+        $blockedLandlord = Landlord::query()->create(['is_verified' => true]);
+
+        Invitation::query()->create([
+            'landlord_id' => $allowedLandlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '1001'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $blockedLandlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '2002'),
+            'status' => InvitationStatus::Pending,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $allowedFlat = Flat::query()->create([
+            'landlord_id' => $allowedLandlord->id,
+            'title' => 'Allowed Flat',
+            'description' => 'Visible to this escort.',
+        ]);
+
+        Flat::query()->create([
+            'landlord_id' => $blockedLandlord->id,
+            'title' => 'Blocked Flat',
+            'description' => 'Must stay hidden.',
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.id', $allowedFlat->id);
+        $response->assertJsonMissing(['title' => 'Blocked Flat']);
+        $response->assertJsonPath('meta.per_page', 12);
+    }
+
+    #[Test]
+    public function landlord_listing_only_returns_owned_flats_and_hides_storage_internals(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $otherLandlord = Landlord::query()->create(['is_verified' => true]);
+
+        $ownedFlat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Owned Flat',
+            'description' => 'Should be visible.',
+        ]);
+
+        $ownedFlat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/owned-flat.jpg',
+            'original_filename' => 'owned-flat.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 1024,
+            'sort_order' => 1,
+        ]);
+
+        Flat::query()->create([
+            'landlord_id' => $otherLandlord->id,
+            'title' => 'Other Flat',
+            'description' => 'Must stay hidden.',
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.id', $ownedFlat->id);
+        $response->assertJsonPath('data.0.photos.0.original_filename', 'owned-flat.jpg');
+        $response->assertJsonPath('data.0.photos.0.content_url', url('/api/photos/'.$ownedFlat->photos()->firstOrFail()->id.'/content'));
+        $response->assertJsonMissing(['title' => 'Other Flat']);
+        $response->assertJsonMissingPath('data.0.photos.0.storage_disk');
+        $response->assertJsonMissingPath('data.0.photos.0.storage_path');
+    }
+
+    #[Test]
+    public function flat_listing_is_paginated_for_landlords(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+
+        Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Flat A',
+            'description' => 'First',
+        ]);
+
+        Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Flat B',
+            'description' => 'Second',
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats?per_page=1', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', ['per_page' => 1], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('meta.per_page', 1);
+        $response->assertJsonPath('meta.total', 2);
+        $response->assertJsonStructure([
+            'data' => [
+                [
+                    'id',
+                    'landlord_id',
+                    'title',
+                    'description',
+                    'photos',
+                    'votes_count',
+                    'my_vote',
+                    'created_at',
+                    'updated_at',
+                ],
+            ],
+            'links' => [
+                'first',
+                'last',
+                'prev',
+                'next',
+            ],
+            'meta' => [
+                'current_page',
+                'from',
+                'last_page',
+                'links',
+                'path',
+                'per_page',
+                'to',
+                'total',
+            ],
+        ]);
+    }
+
+    #[Test]
+    public function paginated_flat_resource_shape_is_frozen_for_mobile_contract(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Contract Flat',
+            'description' => 'Frozen JSON shape.',
+        ]);
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/contract.jpg',
+            'original_filename' => 'contract.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 128,
+            'sort_order' => 1,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats?per_page=1', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', ['per_page' => 1], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame(
+            ['id', 'landlord_id', 'title', 'description', 'photos', 'votes_count', 'my_vote', 'created_at', 'updated_at'],
+            array_keys($data['data'][0]),
+        );
+        $this->assertSame(
+            ['id', 'flat_id', 'content_url', 'original_filename', 'mime_type', 'byte_size', 'sort_order', 'created_at', 'updated_at'],
+            array_keys($data['data'][0]['photos'][0]),
+        );
+        $this->assertSame(url('/api/photos/'.$photo->id.'/content'), $data['data'][0]['photos'][0]['content_url']);
+        $this->assertSame(1, $data['meta']['per_page']);
+        $this->assertSame(1, $data['meta']['total']);
+    }
+
+    #[Test]
+    public function guest_vote_is_hardware_signed(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111333');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Voting Flat',
+            'description' => 'Guest can vote here.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '3003'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $payload = ['is_favorite' => true];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/vote', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/vote', $payload);
+
+        $response->assertOk()->assertJsonPath('data.is_favorite', true);
+        $this->assertDatabaseHas('votes', [
+            'flat_id' => $flat->id,
+            'escort_id' => $escort->id,
+            'is_favorite' => true,
+        ]);
+    }
+
+    #[Test]
+    public function multipart_upload_signature_contract(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Upload Flat',
+            'description' => 'Ready for photos.',
+        ]);
+
+        $file = UploadedFile::fake()->image('flat.jpg');
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'POST', '/api/flats/'.$flat->id.'/photos', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+                'Accept' => 'application/json',
+            ])
+            ->post('/api/flats/'.$flat->id.'/photos', [
+                'photo' => $file,
+            ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('flat_photos', [
+            'flat_id' => $flat->id,
+            'original_filename' => 'flat.jpg',
+        ]);
+
+        $storedPhoto = $flat->photos()->firstOrFail();
+        $this->assertTrue(Storage::disk('public')->exists($storedPhoto->storage_path));
+        $response->assertJsonMissingPath('data.storage_disk');
+        $response->assertJsonMissingPath('data.storage_path');
+    }
+
+    #[Test]
+    public function escort_can_fetch_photo_content_via_protected_media_route(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111444');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Visible Flat',
+            'description' => 'Escort can read photo content.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4444'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        Storage::disk('public')->put('flat-photos/content.jpg', 'photo-content');
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/content.jpg',
+            'original_filename' => 'content.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 13,
+            'sort_order' => 1,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/photos/'.$photo->id.'/content', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/photos/'.$photo->id.'/content', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+        ]);
+
+        $response->assertOk();
+        $this->assertSame('no-store, private', $response->headers->get('cache-control'));
+    }
+
+    #[Test]
+    public function escort_cannot_fetch_foreign_photo_content(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111445');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Hidden Flat',
+            'description' => 'Escort should not read this.',
+        ]);
+
+        Storage::disk('public')->put('flat-photos/hidden.jpg', 'hidden-content');
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/hidden.jpg',
+            'original_filename' => 'hidden.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 14,
+            'sort_order' => 1,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/photos/'.$photo->id.'/content', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/photos/'.$photo->id.'/content', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertForbidden()->assertJsonPath('message', 'You do not have access to this photo.');
+    }
+
+    #[Test]
+    public function landlord_can_delete_owned_photo_and_file_is_removed(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Delete Flat',
+            'description' => 'Photo removal target.',
+        ]);
+
+        Storage::disk('public')->put('flat-photos/delete-me.jpg', 'photo-bytes');
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/delete-me.jpg',
+            'original_filename' => 'delete-me.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 10,
+            'sort_order' => 1,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'DELETE', '/api/photos/'.$photo->id, $timestamp, $nonce);
+
+        $response = $this->call('DELETE', '/api/photos/'.$photo->id, [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertNoContent();
+        $this->assertDatabaseMissing('flat_photos', ['id' => $photo->id]);
+        $this->assertFalse(Storage::disk('public')->exists('flat-photos/delete-me.jpg'));
+    }
+
+    #[Test]
+    public function landlord_cannot_delete_another_landlords_photo(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token] = $this->createLandlordSession();
+        $otherLandlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $otherLandlord->id,
+            'title' => 'Foreign Flat',
+            'description' => 'Must stay protected.',
+        ]);
+
+        Storage::disk('public')->put('flat-photos/foreign.jpg', 'photo-bytes');
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/foreign.jpg',
+            'original_filename' => 'foreign.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 10,
+            'sort_order' => 1,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'DELETE', '/api/photos/'.$photo->id, $timestamp, $nonce);
+
+        $response = $this->call('DELETE', '/api/photos/'.$photo->id, [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertForbidden()->assertJsonPath('message', 'You do not own this photo.');
+        $this->assertDatabaseHas('flat_photos', ['id' => $photo->id]);
+        $this->assertTrue(Storage::disk('public')->exists('flat-photos/foreign.jpg'));
+    }
+
+    #[Test]
+    public function escort_can_report_landlord_with_fixed_reason_codes(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111446');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Report Flat',
+            'description' => 'Escort can report the landlord.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4466'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $payload = ['reason_code' => EscortReportReason::Harassing->value];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-landlord', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-landlord', $payload);
+
+        $response->assertCreated()->assertJsonPath('data.reason_code', EscortReportReason::Harassing->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::Harassing->value,
+        ]);
+    }
+
+    #[Test]
+    public function escort_can_edit_existing_landlord_report_reason(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111448');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Editable Escort Report Flat',
+            'description' => 'Escort report should update in place.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4488'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::Pimp->value,
+        ]);
+
+        $payload = ['reason_code' => EscortReportReason::DidNotKeepAgreement->value];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-landlord', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-landlord', $payload);
+
+        $response->assertOk()->assertJsonPath('data.reason_code', EscortReportReason::DidNotKeepAgreement->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::DidNotKeepAgreement->value,
+        ]);
+        $this->assertDatabaseCount('flat_reports', 1);
+    }
+
+    #[Test]
+    public function landlord_can_report_escort_with_fixed_reason_codes(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $escort = Escort::query()->create([
+            'phone_number' => '+421900111447',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Landlord Report Flat',
+            'description' => 'Landlord can report the escort.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4477'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $payload = [
+            'escort_id' => $escort->id,
+            'reason_code' => LandlordReportReason::DidNotPay->value,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-escort', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
+
+        $response->assertCreated()->assertJsonPath('data.reason_code', LandlordReportReason::DidNotPay->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reason_code' => LandlordReportReason::DidNotPay->value,
+        ]);
+    }
+
+    #[Test]
+    public function landlord_can_edit_existing_escort_report_reason(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        [, $escortPublicKey] = $this->generateEcKeyPair();
+        $escort = Escort::query()->create([
+            'phone_number' => '+421900111449',
+            'public_key' => $escortPublicKey,
+        ]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Editable Landlord Report Flat',
+            'description' => 'Landlord report should update in place.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4499'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ]);
+
+        $payload = [
+            'escort_id' => $escort->id,
+            'reason_code' => LandlordReportReason::Hygiene->value,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-escort', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
+
+        $response->assertOk()->assertJsonPath('data.reason_code', LandlordReportReason::Hygiene->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reason_code' => LandlordReportReason::Hygiene->value,
+        ]);
+        $this->assertDatabaseCount('flat_reports', 1);
+    }
+
+    private function createEscortSession(string $phoneNumber): array
+    {
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+        $escort = Escort::query()->create([
+            'phone_number' => $phoneNumber,
+            'public_key' => $publicKey,
+        ]);
+
+        return [$privateKey, $escort, $escort->createToken('escort-device')->plainTextToken];
+    }
+
+    private function createLandlordSession(): array
+    {
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+        $landlord = Landlord::query()->create([
+            'public_key' => $publicKey,
+            'is_verified' => true,
+        ]);
+
+        return [$privateKey, $landlord->createToken('landlord-device')->plainTextToken, $landlord];
+    }
+}

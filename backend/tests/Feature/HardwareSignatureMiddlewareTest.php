@@ -2,9 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\VerifyHardwareSignature;
 use App\Models\Escort;
+use App\Models\Landlord;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\Response;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -111,5 +115,47 @@ class HardwareSignatureMiddlewareTest extends TestCase
         ])->postJson('/api/protected/ping', $payload);
 
         $response->assertUnauthorized();
+    }
+
+    #[Test]
+    public function middleware_accepts_raw_multipart_signature_for_flat_photo_upload_path(): void
+    {
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+
+        $landlord = Landlord::query()->create([
+            'public_key' => $publicKey,
+            'is_verified' => true,
+        ]);
+
+        $accessToken = $landlord->createToken('landlord-device')->accessToken;
+        $actor = $landlord->withAccessToken($accessToken);
+        $boundary = '----BKPBoundary'.Str::random(24);
+        $body = implode("\r\n", [
+            '--'.$boundary,
+            'Content-Disposition: form-data; name="photo"; filename="flat.jpg"',
+            'Content-Type: image/jpeg',
+            '',
+            'raw-jpeg-payload',
+            '--'.$boundary.'--',
+            '',
+        ]);
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent($body, $privateKey, 'POST', '/api/flats/42/photos', $timestamp, $nonce);
+
+        $request = Request::create('/api/flats/42/photos', 'POST', [], [], [], [
+            'CONTENT_TYPE' => 'multipart/form-data; boundary='.$boundary,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+        ], $body);
+        $request->setUserResolver(fn () => $actor);
+
+        $middleware = new VerifyHardwareSignature();
+        $response = $middleware->handle($request, fn (): Response => response()->json(['ok' => true]));
+
+        $this->assertTrue($request->attributes->get('hardware_signature_verified'));
+        $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+        $this->assertSame('{"ok":true}', $response->getContent());
     }
 }

@@ -30,12 +30,33 @@ abstract class TestCase extends BaseTestCase
     protected function signHardwareRequest(array $payload, string $privateKey, string $method, string $path, string $timestamp, string $nonce): string
     {
         $encodedPayload = json_encode($payload, JSON_THROW_ON_ERROR);
+
+        return $this->signHardwareContent($encodedPayload, $privateKey, $method, $path, $timestamp, $nonce);
+    }
+
+    protected function signHardwareContent(string $content, string $privateKey, string $method, string $path, string $timestamp, string $nonce): string
+    {
         $canonicalPayload = implode("\n", [
             $timestamp,
             $nonce,
             strtoupper($method),
             $path,
-            hash('sha256', $encodedPayload),
+            hash('sha256', $content),
+        ]);
+
+        openssl_sign($canonicalPayload, $signature, $privateKey, OPENSSL_ALGO_SHA256);
+
+        return base64_encode($signature);
+    }
+
+    protected function signHardwareBodyHash(string $bodyHash, string $privateKey, string $method, string $path, string $timestamp, string $nonce): string
+    {
+        $canonicalPayload = implode("\n", [
+            $timestamp,
+            $nonce,
+            strtoupper($method),
+            $path,
+            $bodyHash,
         ]);
 
         openssl_sign($canonicalPayload, $signature, $privateKey, OPENSSL_ALGO_SHA256);

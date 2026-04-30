@@ -246,3 +246,60 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - The app currently behaves as a workflow demonstrator for onboarding, share intake, and signed invitation submission rather than as a production-shaped landlord or escort experience.
 - The next implementation focus should move from proving the cryptographic boundary to building real product UI and UX on top of the validated iOS landlord foundation.
 - That next slice should include a proper landlord entry flow, a stable invitation/send experience, and the first escort-facing onboarding UX before treating the mobile app as MVP-complete.
+
+## Step 4.1: The Flat Gallery Backend Contract
+
+- **Action:** Implement the backend-first flat gallery contract so product UI can build on stable data, paginated list semantics, protected media delivery, bilateral reports, RBAC, access-scope, and signed-upload behavior.
+- **Prerequisite:** This step assumes the validated iOS landlord Step 3 slice is already in place.
+- **Task:**
+  1. **Backend Data Model (Laravel):**
+  - Create `Flat`, `FlatPhoto`, `Vote`, and bilateral `FlatReport` models plus migrations.
+  - Ensure the core relationships exist: Landlord `hasMany` Flats, Flat `hasMany` Photos, Flat `hasMany` Votes, and Flat `hasMany` Reports.
+  2. **Protected Endpoints (`VerifyHardwareSignature`):**
+  - `POST /api/flats`: Owner only, creates a Flat under the authenticated Landlord.
+  - `GET /api/flats`: Returns a paginated flat list scoped to the authenticated actor. Freeze the default and maximum `per_page` behavior now so mobile can depend on it safely.
+  - `POST /api/flats/{id}/photos`: Owner only, accepts `multipart/form-data` uploads.
+  - `GET /api/photos/{id}/content`: Delivers gallery media only through the authenticated and hardware-signed backend route; the API must not require the mobile client to depend on public storage URLs.
+  - `DELETE /api/photos/{id}`: Owner only, deletes a photo.
+  - `POST /api/flats/{id}/vote`: Guest only, records a hardware-signed vote or mark from an Escort.
+  - `POST /api/flats/{id}/report-landlord`: Escort only, creates or edits a hardware-signed landlord report using the fixed reasons `pimp`, `harassing`, or `did_not_keep_agreement`.
+  - `POST /api/flats/{id}/report-escort`: Landlord only, creates or edits a hardware-signed escort report using the fixed reasons `drugs`, `hygiene`, or `did_not_pay`.
+  3. **Authorization And Scope:**
+  - Freeze the owner-only mutation rules for flat creation, photo upload, and photo deletion.
+  - Freeze the escort access rule for `GET /api/flats` and `GET /api/photos/{id}/content` so Step 4.2 does not imply a public flat directory or public gallery media.
+  - Freeze the bilateral reporting rule: escorts may report only landlords tied to flats they can access, landlords may report only escorts tied back to the landlord through an accepted invitation relationship, and each side may edit its existing report through the same signed endpoint rather than creating duplicate rows.
+  4. **Multipart Signing Validation:**
+  - Explicitly validate that `multipart/form-data` photo uploads follow the same Secure API Interceptor contract as protected JSON requests.
+  - Prove the backend verifies the signed upload request without weakening the Step 3 signature boundary.
+- **Accessibility (ARIA):**
+  - _Not Applicable._ This slice is backend contract and authorization work; no product UI is introduced here.
+- **Test Plan:**
+  - `test_flat_creation_requires_landlord_role`: Assert that an Escort's hardware signature cannot access the `POST /api/flats` endpoint.
+  - `test_flat_gallery_scope_requires_approved_access`: Assert that an Escort only receives flats allowed by the invitation/access rule.
+  - `test_flat_listing_is_paginated_for_landlords`: Assert that `GET /api/flats` returns the frozen paginated list shape and respects `per_page` boundaries.
+  - `test_escort_can_fetch_photo_content_via_protected_media_route`: Assert that a permitted Escort receives media only through the authenticated content endpoint.
+  - `test_guest_vote_is_hardware_signed`: Assert that a vote is successfully recorded when accompanied by a valid canonical payload signature.
+  - `test_escort_can_report_landlord_with_fixed_reason_codes`: Assert that escort-side reports accept only the fixed landlord-report reasons.
+  - `test_escort_can_edit_existing_landlord_report_reason`: Assert that escort-side reports update the existing report instead of creating duplicates.
+  - `test_landlord_can_report_escort_with_fixed_reason_codes`: Assert that landlord-side reports accept only the fixed escort-report reasons.
+  - `test_landlord_can_edit_existing_escort_report_reason`: Assert that landlord-side reports update the existing report instead of creating duplicates.
+  - `test_multipart_upload_signature_contract`: Assert that owner photo uploads verify correctly through the same hardware-signature middleware contract used by JSON requests.
+
+  ### Step 4.1 Contract Freeze Notes
+  - The paginated `GET /api/flats` response shape is now treated as a frozen mobile contract and is covered by focused resource-shape assertions.
+  - Bilateral reports are intentionally `write-edit`, not append-only: each actor updates their existing report for the same flat and counterpart instead of creating parallel duplicates.
+
+### Step 4.1 Implementation Snapshot
+
+- `GET /api/flats` is now paginated and returns mobile-facing resource shapes rather than raw storage internals.
+- Gallery photos are now exposed through authenticated `GET /api/photos/{id}/content` delivery instead of public storage URLs.
+- Bilateral reporting is now part of the backend contract with fixed reasons on both sides:
+  - Escort reports landlord: `pimp`, `harassing`, `did_not_keep_agreement`
+  - Landlord reports escort: `drugs`, `hygiene`, `did_not_pay`
+- Focused Laravel tests now cover pagination, protected media delivery, signed multipart upload verification, and both report directions.
+- The first mobile consumer now exists in the mobile app as a signed flat-list loader that targets paginated `GET /api/flats` and prepares signed requests for each protected `content_url`.
+
+### Step 4.1 Product Intent
+
+- This slice exists to remove backend and integration ambiguity before the real gallery UX is built.
+- It should be treated as a short enabling step, not as the user-facing product milestone.
