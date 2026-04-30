@@ -249,6 +249,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.1: The Flat Gallery Backend Contract
 
+- **Detailed Documentation:** See [ADR/4_1_flat_gallery_backend_contract.md](ADR/4_1_flat_gallery_backend_contract.md).
 - **Action:** Implement the backend-first flat gallery contract so product UI can build on stable data, paginated list semantics, protected media delivery, bilateral reports, RBAC, access-scope, and signed-upload behavior.
 - **Prerequisite:** This step assumes the validated iOS landlord Step 3 slice is already in place.
 - **Task:**
