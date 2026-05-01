@@ -227,6 +227,11 @@ class FlatGalleryApiTest extends TestCase
             'landlord_id' => $landlord->id,
             'title' => 'Contract Flat',
             'description' => 'Frozen JSON shape.',
+            'contact_phone' => '+421900111222',
+            'contact_email' => 'owner@example.test',
+            'whatsapp_url' => 'https://wa.me/421900111222',
+            'telegram_url' => 'https://t.me/owner_example',
+            'viber_url' => 'viber://chat?number=%2B421900111222',
         ]);
         $photo = $flat->photos()->create([
             'storage_disk' => 'public',
@@ -253,9 +258,14 @@ class FlatGalleryApiTest extends TestCase
         $data = $response->json();
 
         $this->assertSame(
-            ['id', 'landlord_id', 'title', 'description', 'photos', 'votes_count', 'my_vote', 'created_at', 'updated_at'],
+            ['id', 'landlord_id', 'title', 'description', 'contact', 'photos', 'votes_count', 'my_vote', 'created_at', 'updated_at'],
             array_keys($data['data'][0]),
         );
+        $this->assertSame(
+            ['phone', 'email', 'whatsapp_url', 'telegram_url', 'viber_url'],
+            array_keys($data['data'][0]['contact']),
+        );
+        $this->assertSame('+421900111222', $data['data'][0]['contact']['phone']);
         $this->assertSame(
             ['id', 'flat_id', 'content_url', 'original_filename', 'mime_type', 'byte_size', 'sort_order', 'created_at', 'updated_at'],
             array_keys($data['data'][0]['photos'][0]),
@@ -263,6 +273,78 @@ class FlatGalleryApiTest extends TestCase
         $this->assertSame(url('/api/photos/'.$photo->id.'/content'), $data['data'][0]['photos'][0]['content_url']);
         $this->assertSame(1, $data['meta']['per_page']);
         $this->assertSame(1, $data['meta']['total']);
+    }
+
+    #[Test]
+    public function landlord_can_create_flat_with_contact_shortcuts(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+
+        $payload = [
+            'title' => 'Contact Flat',
+            'description' => 'Has real contact shortcuts.',
+            'contact' => [
+                'phone' => '+421900333444',
+                'email' => 'contact@example.test',
+                'whatsapp_url' => 'https://wa.me/421900333444',
+                'telegram_url' => 'https://t.me/contact_example',
+                'viber_url' => 'viber://chat?number=%2B421900333444',
+            ],
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats', $payload);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.contact.phone', '+421900333444')
+            ->assertJsonPath('data.contact.email', 'contact@example.test');
+
+        $this->assertDatabaseHas('flats', [
+            'landlord_id' => $landlord->id,
+            'title' => 'Contact Flat',
+            'contact_phone' => '+421900333444',
+            'contact_email' => 'contact@example.test',
+            'whatsapp_url' => 'https://wa.me/421900333444',
+            'telegram_url' => 'https://t.me/contact_example',
+            'viber_url' => 'viber://chat?number=%2B421900333444',
+        ]);
+    }
+
+    #[Test]
+    public function landlord_flat_creation_requires_description_phone_and_email(): void
+    {
+        [$privateKey, $token] = $this->createLandlordSession();
+
+        $payload = [
+            'title' => 'Incomplete Flat',
+            'contact' => [],
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats', $payload);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'description',
+                'contact.phone',
+                'contact.email',
+            ]);
     }
 
     #[Test]

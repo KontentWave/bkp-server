@@ -86,10 +86,23 @@ class FlatGalleryController extends Controller
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
+            'description' => ['required', 'string'],
+            'contact.phone' => ['required', 'string', 'max:32'],
+            'contact.email' => ['required', 'email:rfc', 'max:255'],
+            'contact.whatsapp_url' => ['nullable', 'string', 'max:2048'],
+            'contact.telegram_url' => ['nullable', 'string', 'max:2048'],
+            'contact.viber_url' => ['nullable', 'string', 'max:2048'],
         ]);
 
-        $flat = $landlord->flats()->create($validated);
+        $flat = $landlord->flats()->create([
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'contact_phone' => data_get($validated, 'contact.phone'),
+            'contact_email' => data_get($validated, 'contact.email'),
+            'whatsapp_url' => data_get($validated, 'contact.whatsapp_url'),
+            'telegram_url' => data_get($validated, 'contact.telegram_url'),
+            'viber_url' => data_get($validated, 'contact.viber_url'),
+        ]);
 
         return FlatResource::make(
             $flat->load(['photos'])->loadCount('votes')->setAttribute('my_vote', null)

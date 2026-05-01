@@ -45,6 +45,8 @@ class VerificationController extends Controller
 
         return response()->json([
             'data' => [
+                'actor_type' => 'escort',
+                'actor_id' => $escort->id,
                 'escort_id' => $escort->id,
                 'phone_number' => $escort->phone_number,
                 'invitation_status' => $invitation->status->value,

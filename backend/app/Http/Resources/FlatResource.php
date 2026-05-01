@@ -18,6 +18,13 @@ class FlatResource extends JsonResource
             'landlord_id' => $this->landlord_id,
             'title' => $this->title,
             'description' => $this->description,
+            'contact' => [
+                'phone' => $this->contact_phone,
+                'email' => $this->contact_email,
+                'whatsapp_url' => $this->whatsapp_url,
+                'telegram_url' => $this->telegram_url,
+                'viber_url' => $this->viber_url,
+            ],
             'photos' => \App\Http\Resources\FlatPhotoResource::collection($this->whenLoaded('photos')),
             'votes_count' => $this->whenCounted('votes', fn (): int => (int) $this->votes_count),
             'my_vote' => $this->my_vote,

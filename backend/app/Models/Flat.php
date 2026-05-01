@@ -16,6 +16,11 @@ class Flat extends Model
         'landlord_id',
         'title',
         'description',
+        'contact_phone',
+        'contact_email',
+        'whatsapp_url',
+        'telegram_url',
+        'viber_url',
     ];
 
     public function landlord(): BelongsTo

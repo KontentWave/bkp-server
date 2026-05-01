@@ -27,7 +27,10 @@ class InvitationApiTest extends TestCase
             'device_name' => 'ios-share-extension',
         ]);
 
-        $response->assertCreated()->assertJsonPath('data.is_verified', true);
+        $response->assertCreated()
+            ->assertJsonPath('data.actor_type', 'landlord')
+            ->assertJsonPath('data.actor_id', 1)
+            ->assertJsonPath('data.is_verified', true);
         $this->assertIsString($response->json('data.token'));
 
         $this->assertDatabaseHas('landlords', [
@@ -131,7 +134,10 @@ class InvitationApiTest extends TestCase
             'public_key' => $publicKey,
         ]);
 
-        $response->assertOk()->assertJsonPath('data.phone_number', '+421900111222');
+        $response->assertOk()
+            ->assertJsonPath('data.actor_type', 'escort')
+            ->assertJsonPath('data.actor_id', 1)
+            ->assertJsonPath('data.phone_number', '+421900111222');
         $this->assertIsString($response->json('data.token'));
 
         $this->assertDatabaseHas('escorts', [

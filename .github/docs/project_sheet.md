@@ -304,3 +304,61 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 - This slice exists to remove backend and integration ambiguity before the real gallery UX is built.
 - It should be treated as a short enabling step, not as the user-facing product milestone.
+
+## Step 4.2: The Landlord's Flat Gallery (Productization)
+
+- **Status:** Partially completed for the validated iOS landlord slice on May 1, 2026. The owner flow is now working on device; the guest slice remains pending behind escort onboarding and guest-specific validation.
+- **Action:** Build the first product-facing landlord and escort gallery experience on top of the completed Step 4.1 backend contract, with role-based regimes (Owner vs. Guest), anonymous voting and reporting visibility, and no app-managed persistent storage for gallery media or data.
+- **Prerequisite:** This step assumes completed Step 4.1 backend work and the validated iOS landlord Step 3 slice. Escort gallery and voting flows additionally depend on the still-pending Step 3 escort OTP onboarding flow.
+- **Task:**
+  1. **Frontend Data Layer (`@tanstack/react-query`):**
+  - Install `@tanstack/react-query`.
+  - Configure the `QueryClient` globally. _Security Note: React Query keeps data in RAM by default. Ensure no experimental disk-persister plugins are installed._
+  - Create custom hooks: `useFlatsQuery()`, `useUploadPhotoMutation()`, `useVoteMutation()`, `useReportLandlordMutation()`, and `useReportEscortMutation()`. Inject the Step 3 `Secure API Interceptor` into their fetch or axios instances to guarantee every query and mutation is hardware-signed.
+  2. **Owner Dashboard & Uploads (`expo-image-picker` & `manipulator`):**
+  - Install `expo-image-picker` and `expo-image-manipulator`.
+  - Build the Owner regime UI, including a real flat-creation flow before photo management and contact shortcuts for phone, email, WhatsApp, Telegram, and Viber when the flat resource exposes them.
+  - Treat `title`, `description`, `contact.phone`, and `contact.email` as required owner inputs. Messenger shortcut URLs remain optional.
+  - **Upload Flow:** Trigger image picker -> On selection, immediately pass the URI to `expo-image-manipulator` to resize (e.g., max 1080px width) and compress (e.g., 0.7 quality) without introducing app-managed persistent gallery storage -> Convert to FormData -> Dispatch `useUploadPhotoMutation`.
+  3. **Secure Gallery Rendering (`@shopify/flash-list` & `expo-image`):**
+  - Install `@shopify/flash-list` and `expo-image`.
+  - Build the `FlatGallery` component using a masonry or multi-column `FlashList` for 60fps scrolling.
+  - Render thumbnails using `<Image source={{ uri }} cachePolicy="memory" />` to avoid app-managed persistent gallery caching on iOS and Android.
+  4. **Regime Overlays & Interactions:**
+  - Derive the active role from secure session metadata stored alongside the device token after landlord token issuance or escort OTP verification. Do not rely on a manual role switch in the product surface.
+  - **If Owner:** Render a flow for creating flats, a floating action button (FAB) for adding photos, tiny trash-can icons over each image for deletion, and the landlord-side escort-report action using the fixed Step 4.1 reasons.
+  - **If Guest:** Render the gallery vote action and the escort-side landlord-report action using the fixed Step 4.1 reasons.
+  - The product UI must treat voting and reporting as anonymous from the counterpart's perspective: landlords may see aggregate vote counts and their own flat state, escorts may see their own vote state, but neither side may see which specific counterpart voted or reported against them.
+  - The product UI must not expose reporter identities, voter identities, or per-counterparty moderation history to the reported side.
+  - If reporter identity needs to be reviewed later, that visibility belongs only in a future admin or moderator website outside the mobile product surface.
+- **Accessibility (ARIA):**
+  - Add `accessibilityRole="image"` and meaningful `accessibilityLabel`s to all `expo-image` components (e.g., `accessibilityLabel={"Photo of flat: " + flat.title}`).
+  - Ensure Owner controls (Delete/Upload/Report) and Guest controls (Vote/Report) have `accessibilityRole="button"` and `accessibilityHint`s describing the action.
+  - Ensure the owner flat-creation flow has labeled inputs and clearly announced validation errors.
+  - Use `accessibilityLiveRegion="polite"` on vote and report status updates so assistive technology announces successful submissions without exposing counterpart identity data.
+- **Test Plan:**
+  - `test_image_manipulator_compresses_payload`: Mock the image picker and assert the manipulator outputs a smaller file size before passing it to the mutation.
+  - `manual_e2e_owner_flat_creation_flow`: Log in as a Landlord, create a Flat, and verify it appears in the owner dashboard before photo upload.
+  - `manual_e2e_owner_upload_delete_flow`: Log in as a Landlord on a physical device, load the product gallery, create or open an owned flat, upload one photo through the gallery component, verify the image appears in the list, delete the same photo, and verify it disappears without exposing any escort-only controls.
+  - `manual_e2e_owner_report_anonymity`: Log in as a Landlord, report an Escort, and verify the landlord receives only submission confirmation while the escort-facing surfaces do not reveal who reported them.
+  - `manual_e2e_guest_vote_and_report_anonymity`: Log in as an Escort, vote on and report a flat or landlord, and verify the escort receives only personal submission state while the landlord-facing surfaces expose only aggregate state and never the acting escort identity.
+  - `manual_e2e_guest_memory_cache_check`: Log in as an Escort, scroll through the gallery, fully close the app, open it in Airplane mode, and verify the gallery photos are completely gone (proving `cachePolicy="memory"` worked).
+
+### Step 4.2 Product Intent
+
+- This is the first slice that should feel like a real landlord and escort product rather than a pure security demonstrator.
+- The implementation should therefore prioritize a credible owner dashboard, guest gallery experience, and anonymity-preserving moderation model over additional low-level proof-of-concept security screens.
+- Any future admin or moderator dashboard that can inspect reporter identity is intentionally out of scope for Step 4.2 and must remain separate from the mobile app product surface.
+
+### Step 4.2 Implementation Snapshot
+
+- **Owner slice validated on device:** The landlord flow now supports session-derived role detection, flat creation with required title/description/phone/email fields, contact block rendering, physical-device photo upload, physical-device photo deletion, and landlord-side escort report submission with confirmation.
+- **Backend and contract work in place:** The flat resource now exposes contact metadata, landlord and escort bootstrap responses now include actor metadata, and the backend validation contract enforces the required owner fields for flat creation.
+- **Manual owner smoke test completed:** The owner flow has been exercised end to end on a physical iPhone, including create flat, upload photo, delete photo, and save an escort report from the product gallery surface.
+
+### Step 4.2 Remaining Scope
+
+- **Guest slice is still pending:** Escort OTP onboarding is not yet validated in-app, so guest vote, guest landlord-report, and guest anonymity checks are not yet closed.
+- **Guest cache behavior is still pending manual proof:** The implementation sets image rendering to `cachePolicy="memory"`, but the guest-side close-app and offline verification path has not yet been completed.
+- **Gallery renderer still differs from the written target:** The current product surface is using the stable mapped gallery renderer rather than the planned `FlashList` implementation, so the Step 4.2 rendering target is not fully closed yet.
+- **Product completion should be recorded as staged:** Treat the current milestone as "owner slice complete, guest slice pending" rather than the full Step 4.2 being complete.

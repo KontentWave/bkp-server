@@ -31,6 +31,8 @@ class LandlordTokenController extends Controller
 
         return response()->json([
             'data' => [
+                'actor_type' => 'landlord',
+                'actor_id' => $landlord->id,
                 'landlord_id' => $landlord->id,
                 'is_verified' => $landlord->is_verified,
                 'token' => $token,
