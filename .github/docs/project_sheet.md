@@ -225,6 +225,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - The shared TypeScript signer contract, canonical payload builder, hardware-signature header assembly, and secure device-token storage are implemented.
 - The iOS local Expo module now provisions and uses a Secure Enclave-backed `secp256r1` signing key that matches the Laravel verification contract.
 - Landlord device onboarding is implemented through `POST /api/landlords/tokens`, and the returned Sanctum bearer token is stored in `expo-secure-store` while the private key remains inside Secure Enclave.
+- Escort OTP onboarding is now implemented in-app through `POST /api/verify`, stores escort session metadata in secure storage, and has been manually validated on iPhone with both successful and invalid-OTP outcomes.
 - On-device validation succeeded on iPhone 11 for three invitation sources: manual input, Apple Notes native share, and Safari selected-text share.
 - Each validated source successfully produced a hardware-signed `POST /api/invitations` request, Laravel created the invitation row, the queue worker processed the notification, and Vonage delivered a real SMS to a live handset.
 
@@ -237,7 +238,6 @@ The critical architectural boundary is still Task 1, but it should now be treate
 ### Step 3 Remaining Scope
 
 - Android KeyMint / Keystore signing, Android screenshot blocking, and Android interoperability validation are still pending.
-- Escort OTP onboarding through `/api/verify` remains future Step 3 scope and has not yet been validated on device.
 - Reverb authorization through the signed mobile client and screenshot/capture mitigation behavior are still pending manual validation.
 
 ### Step 3 Product Gap
@@ -307,7 +307,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.2: The Landlord's Flat Gallery (Productization)
 
-- **Status:** Partially completed for the validated iOS landlord slice on May 1, 2026. The owner flow is now working on device; the guest slice remains pending behind escort onboarding and guest-specific validation.
+- **Status:** Substantially completed for the validated iOS landlord and escort slices on May 1, 2026. Owner flow, escort OTP onboarding, guest-mode rendering, and guest action submission are now working on device. The remaining open items are the guest cache/offline proof and the written `FlashList` rendering target.
 - **Action:** Build the first product-facing landlord and escort gallery experience on top of the completed Step 4.1 backend contract, with role-based regimes (Owner vs. Guest), anonymous voting and reporting visibility, and no app-managed persistent storage for gallery media or data.
 - **Prerequisite:** This step assumes completed Step 4.1 backend work and the validated iOS landlord Step 3 slice. Escort gallery and voting flows additionally depend on the still-pending Step 3 escort OTP onboarding flow.
 - **Task:**
@@ -355,10 +355,12 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Owner slice validated on device:** The landlord flow now supports session-derived role detection, flat creation with required title/description/phone/email fields, contact block rendering, physical-device photo upload, physical-device photo deletion, and landlord-side escort report submission with confirmation.
 - **Backend and contract work in place:** The flat resource now exposes contact metadata, landlord and escort bootstrap responses now include actor metadata, and the backend validation contract enforces the required owner fields for flat creation.
 - **Manual owner smoke test completed:** The owner flow has been exercised end to end on a physical iPhone, including create flat, upload photo, delete photo, and save an escort report from the product gallery surface.
+- **Escort onboarding and guest-mode activation validated:** The escort OTP handshake now succeeds against the real backend contract, rejects invalid OTP input correctly, stores escort session metadata in secure storage, and flips the product gallery into escort mode on device.
+- **Guest gallery UI rendering validated:** The guest-facing gallery surface now renders contact information, protected images, vote controls, and landlord-report controls while keeping owner-only create/upload/delete actions hidden.
+- **Guest action submission validated on device:** The escort vote flow now saves real vote state successfully, and the escort landlord-report flow now saves real report state successfully from the guest gallery surface.
 
 ### Step 4.2 Remaining Scope
 
-- **Guest slice is still pending:** Escort OTP onboarding is not yet validated in-app, so guest vote, guest landlord-report, and guest anonymity checks are not yet closed.
 - **Guest cache behavior is still pending manual proof:** The implementation sets image rendering to `cachePolicy="memory"`, but the guest-side close-app and offline verification path has not yet been completed.
 - **Gallery renderer still differs from the written target:** The current product surface is using the stable mapped gallery renderer rather than the planned `FlashList` implementation, so the Step 4.2 rendering target is not fully closed yet.
-- **Product completion should be recorded as staged:** Treat the current milestone as "owner slice complete, guest slice pending" rather than the full Step 4.2 being complete.
+- **Product completion should still be recorded with narrow caveats:** Treat the current milestone as functionally validated for landlord and escort actions, with remaining closure work limited to guest cache verification and the `FlashList` target decision.
