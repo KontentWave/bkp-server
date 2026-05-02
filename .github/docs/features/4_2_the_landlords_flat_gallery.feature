@@ -53,6 +53,10 @@ Feature: Landlord Flat Gallery and Role-Based Regimes
     When the Escort fully closes the application or their session expires
     Then no app-managed flat photos or gallery JSON data should remain written to persistent disk storage
 
+  # MVP note: the current slice now uses FlashList for the flat-card gallery surface.
+  # Richer media UX such as carousel browsing or pinch-to-zoom is intentionally deferred.
+  # Release-style offline/cache proof also remains a later hardening activity rather than a blocker for Step 4.2 closure.
+
   Scenario: Guest securely votes on a flat to verify its quality
     Given the Escort has already completed the future Step 3 OTP onboarding flow
     And the Escort is viewing the Flat Gallery

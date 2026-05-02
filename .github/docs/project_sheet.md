@@ -307,7 +307,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.2: The Landlord's Flat Gallery (Productization)
 
-- **Status:** Substantially completed for the validated iOS landlord and escort slices on May 1, 2026. Owner flow, escort OTP onboarding, guest-mode rendering, and guest action submission are now working on device. The remaining open items are the guest cache/offline proof and the written `FlashList` rendering target.
+- **Status:** Closed for MVP on May 2, 2026 for the validated iOS landlord and escort slices. Owner flow, escort OTP onboarding, guest-mode rendering, guest action submission, and the `FlashList` gallery renderer are now working. Advanced media UX and release-style cache/offline proof are intentionally deferred.
+- **Detailed Documentation:** See [ADR/4_2_landlord_flat_gallery_productization.md](ADR/4_2_landlord_flat_gallery_productization.md).
 - **Action:** Build the first product-facing landlord and escort gallery experience on top of the completed Step 4.1 backend contract, with role-based regimes (Owner vs. Guest), anonymous voting and reporting visibility, and no app-managed persistent storage for gallery media or data.
 - **Prerequisite:** This step assumes completed Step 4.1 backend work and the validated iOS landlord Step 3 slice. Escort gallery and voting flows additionally depend on the still-pending Step 3 escort OTP onboarding flow.
 - **Task:**
@@ -358,9 +359,9 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Escort onboarding and guest-mode activation validated:** The escort OTP handshake now succeeds against the real backend contract, rejects invalid OTP input correctly, stores escort session metadata in secure storage, and flips the product gallery into escort mode on device.
 - **Guest gallery UI rendering validated:** The guest-facing gallery surface now renders contact information, protected images, vote controls, and landlord-report controls while keeping owner-only create/upload/delete actions hidden.
 - **Guest action submission validated on device:** The escort vote flow now saves real vote state successfully, and the escort landlord-report flow now saves real report state successfully from the guest gallery surface.
+- **Gallery renderer aligned with the written target:** The flat-card surface now renders through `FlashList`, closing the remaining implementation gap between the validated MVP slice and the original Step 4.2 rendering plan.
 
 ### Step 4.2 Remaining Scope
 
-- **Guest cache behavior is still pending manual proof:** The implementation sets image rendering to `cachePolicy="memory"`, but the guest-side close-app and offline verification path has not yet been completed.
-- **Gallery renderer still differs from the written target:** The current product surface is using the stable mapped gallery renderer rather than the planned `FlashList` implementation, so the Step 4.2 rendering target is not fully closed yet.
-- **Product completion should still be recorded with narrow caveats:** Treat the current milestone as functionally validated for landlord and escort actions, with remaining closure work limited to guest cache verification and the `FlashList` target decision.
+- **Release-style cache verification is still deferred:** The implementation sets image rendering to `cachePolicy="memory"`, but the guest-side close-app and offline verification path is postponed to a later hardening pass rather than blocking MVP closure.
+- **Advanced media UX is intentionally deferred:** Carousel browsing, pinch-to-zoom, and richer image-viewing interactions are product polish items for later phases, not Step 4.2 MVP requirements.
