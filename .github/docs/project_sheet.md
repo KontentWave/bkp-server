@@ -365,3 +365,42 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 - **Release-style cache verification is still deferred:** The implementation sets image rendering to `cachePolicy="memory"`, but the guest-side close-app and offline verification path is postponed to a later hardening pass rather than blocking MVP closure.
 - **Advanced media UX is intentionally deferred:** Carousel browsing, pinch-to-zoom, and richer image-viewing interactions are product polish items for later phases, not Step 4.2 MVP requirements.
+
+## Step 4.3: Field Test Readiness (UI Polish & Android Parity)
+
+- **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md).
+- **Action:** Strip all developer diagnostic noise from the UI to create a confident, non-technical user experience, and implement the pending Android platform layer to enable end-to-end MVP testing.
+- **Task:**
+  1. **UI Polish & De-noising (Cross-Platform):**
+     - Remove all on-screen debug logs, raw JSON dumps, and bypass buttons.
+     - Implement clean React Query `isLoading` states (e.g., subtle loading spinners or skeleton loaders) so the app doesn't look "frozen" during network requests.
+     - Implement user-friendly error boundaries (e.g., replacing "AxiosError 500" with "Nepodarilo sa načítať údaje. Skúste to znova.")
+     - Add clear "Empty States" (e.g., when a Landlord has 0 flats, show a friendly prompt with an "Add Flat" button instead of a blank white screen).
+  2. **Android Cryptographic Parity (KeyMint):**
+     - Execute the pending Android scope from Step 3.
+     - Implement the Expo Local Module in Kotlin to generate `secp256r1` keys using the Android Hardware Keystore / KeyMint.
+     - Ensure the Kotlin module matches the exact same **ADR 004 Cryptographic Contract** (PEM/SPKI public key format, DER-encoded signature, 5-part canonical payload) that iOS uses, so the Laravel backend verifies both platforms identically.
+  3. **Android Security (`FLAG_SECURE`):**
+     - Activate `expo-screen-capture` specifically for Android to enforce the hard OS-level block against screenshots and screen recordings, fulfilling the zero-data-at-rest physical promise.
+  4. **Android Compilation (`.apk`):**
+     - Configure `eas.json` to build a standalone Android `.apk` profile.
+     - Run `eas build --platform android --profile preview` to generate the `.apk` file that can be directly shared and sideloaded by the Escorts, bypassing the Google Play Store censorship.
+  - **Execution Order:**
+    1. **UI cleanup first:** Remove developer-facing diagnostics, replace raw failure text with user-facing copy, and add clean loading and empty states before exposing the product to real testers.
+    2. **Android signer parity second:** Complete the Kotlin KeyMint signer and prove it matches ADR 004 exactly before treating Android escorts as trusted actors in live flows.
+    3. **Android screenshot blocking third:** Turn on Android `FLAG_SECURE` protection only after the Android secure-client path is functional, so capture blocking is validated on the real sensitive surfaces.
+    4. **APK distribution fourth:** Produce the sideloadable Android preview build only after UI cleanup and Android security parity are complete, so testers receive a coherent and defensible build rather than a moving target.
+    5. **Closed-pilot checklist last:** Start real-user testing only after the four implementation stages above are complete and a narrow pilot checklist is signed off.
+  - **Closed-Pilot Checklist:**
+    - Restrict the first rollout to a small invited group of landlords and escorts rather than a broad public release.
+    - Define who can issue invites, who can revoke tester access, and how compromised sessions or devices will be disabled.
+    - Confirm production or pilot environment settings for rate limiting, log redaction, queue health, storage cleanup, and incident response.
+    - Prepare support and moderation procedures for sensitive reports, mistaken invites, abusive behavior, and urgent content removal.
+    - Run one end-to-end cross-platform rehearsal with the exact pilot infrastructure before inviting real testers.
+    - Do not expand beyond the closed pilot until the rehearsal and the first pilot cycle complete without security or operational regressions.
+- **First Implementation Slice:** Start with the cross-platform UI cleanup path in the main mobile entry screen: remove developer-facing invitation and onboarding diagnostics, convert transport-oriented copy into product-facing language, and keep the first tester flow readable before Android parity work begins.
+- **Test Plan:**
+  - `manual_e2e_ui_cleanliness`: Verify no debug info is visible during the happy path or error paths.
+  - `manual_e2e_android_onboarding`: Run the `.apk` on a physical Android device, complete the OTP flow, and verify Laravel successfully registers the KeyMint public key.
+  - `manual_e2e_android_screenshot_block`: Attempt to take a screenshot on the Android device and verify the OS explicitly blocks it.
+  - `manual_e2e_cross_platform_invite`: (The Ultimate Test) Landlord (iOS) creates a flat and sends an invite -> Escort (Android) receives SMS, onboards, and securely votes on the flat.
