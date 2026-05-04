@@ -368,8 +368,10 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.3: Field Test Readiness (UI Polish & Android Parity)
 
+- **Status:** Partially completed for local device validation on May 4, 2026. The UI clean-up slice, Android signer parity, and Android runtime validation are now complete on physical devices. Preview APK distribution and the closed-pilot rollout gate remain open.
 - **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md).
 - **Action:** Strip all developer diagnostic noise from the UI to create a confident, non-technical user experience, and implement the pending Android platform layer to enable end-to-end MVP testing.
+- **Platform Target:** Field testing must support both product contracts (Landlord and Escort) on both iOS and Android. Step 4.3 is not only about Android escorts; it is the parity and rollout-readiness step for the two-role mobile product across both platforms.
 - **Task:**
   1. **UI Polish & De-noising (Cross-Platform):**
      - Remove all on-screen debug logs, raw JSON dumps, and bypass buttons.
@@ -380,6 +382,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
      - Execute the pending Android scope from Step 3.
      - Implement the Expo Local Module in Kotlin to generate `secp256r1` keys using the Android Hardware Keystore / KeyMint.
      - Ensure the Kotlin module matches the exact same **ADR 004 Cryptographic Contract** (PEM/SPKI public key format, DER-encoded signature, 5-part canonical payload) that iOS uses, so the Laravel backend verifies both platforms identically.
+     - Validate that Android signing supports both landlord and escort onboarding plus all protected gallery actions, so the two mobile roles reach parity with the already validated iOS flows.
   3. **Android Security (`FLAG_SECURE`):**
      - Activate `expo-screen-capture` specifically for Android to enforce the hard OS-level block against screenshots and screen recordings, fulfilling the zero-data-at-rest physical promise.
   4. **Android Compilation (`.apk`):**
@@ -404,3 +407,19 @@ The critical architectural boundary is still Task 1, but it should now be treate
   - `manual_e2e_android_onboarding`: Run the `.apk` on a physical Android device, complete the OTP flow, and verify Laravel successfully registers the KeyMint public key.
   - `manual_e2e_android_screenshot_block`: Attempt to take a screenshot on the Android device and verify the OS explicitly blocks it.
   - `manual_e2e_cross_platform_invite`: (The Ultimate Test) Landlord (iOS) creates a flat and sends an invite -> Escort (Android) receives SMS, onboards, and securely votes on the flat.
+
+### Step 4.3 Implementation Snapshot
+
+- **Main entry flow cleaned up:** The invitation, landlord access, escort OTP, and gallery entry screens now use product-facing copy instead of developer transport framing, and the most visible bypass-style diagnostics have been removed from the primary tester path.
+- **Cleaner gallery loading and empty states:** The flat gallery surface now shows explicit loading and empty states, better role-status messaging, and simpler landlord and escort action labels instead of debug-oriented feedback.
+- **Android signer parity implemented:** The Expo local module `bkp-secure-signer` now includes an Android Kotlin implementation backed by Android Keystore / KeyMint-style APIs and exposes the same signer contract used on iOS.
+- **Android onboarding and protected actions validated on a real device:** Manual device testing confirmed landlord bootstrap, escort OTP verification, invitation flow, gallery access, vote/report flows, and protected media actions all work on Android against the Laravel signature contract.
+- **Android runtime path stabilized:** The Android path now runs with `newArchEnabled=false`, the secure signer module registered for Android, and the gallery surface rendered through a runtime-safe `FlatList` path so the app works reliably in the current Expo SDK 54 / React Native 0.81 setup.
+- **Android screenshot blocking implemented with a development guard:** `expo-screen-capture` now protects Android non-development builds, while development builds intentionally allow screenshots so UI work and device debugging remain practical.
+- **Physical-device install path proven:** The Android app was built, installed, and exercised successfully on a physical device, giving Step 4.3 a real parity checkpoint rather than emulator-only confidence.
+
+### Step 4.3 Remaining Scope
+
+- **Preview APK distribution is still pending:** The roadmap target for a dedicated sideloadable preview APK has not been completed yet; current validation used development and debug-style Android builds on a physical device.
+- **Closed-pilot operations are still pending:** Tester invitation governance, revocation flow, incident handling, monitoring, and the first rehearsal against pilot infrastructure still need their own rollout pass.
+- **UI polish is intentionally not finished:** The app is now functionally coherent and much less developer-facing, but spacing, visual rhythm, and section consistency are deferred to a later polish slice instead of blocking the Android parity checkpoint.

@@ -19,6 +19,16 @@ Step 4.3 deserves its own ADR because it freezes rollout order and operational g
 
 Step 4.3 is the rollout-readiness step that must complete before broad live testing begins.
 
+### Product Coverage Boundary
+
+- Field testing targets two product contracts:
+  - landlord
+  - escort
+- Each contract must be supported on two mobile platforms:
+  - iOS
+  - Android
+- Step 4.3 should therefore be read as mobile parity and rollout readiness for both roles across both platforms, not as an Android-only escort expansion.
+
 ### Execution Order
 
 1. UI cleanup first
@@ -40,7 +50,7 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 
 - Android must implement the same ADR 004 signer contract as iOS through a Kotlin KeyMint / Android Keystore local module.
 - Laravel must be able to verify Android signatures using the same canonical payload rules and public-key format already validated on iOS.
-- Android escorts should not be treated as trusted live-test actors until this parity is proven.
+- Android landlord and escort users should not be treated as trusted live-test actors until this parity is proven across onboarding and protected gallery actions.
 
 ### Screenshot Blocking Boundary
 
@@ -76,6 +86,25 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Live deployment is deliberately slowed down in exchange for better operational control.
 - Android work becomes a blocking rollout dependency rather than a later parity follow-up.
 - Some internal convenience surfaces may need to move behind development-only tooling instead of staying visible in the main app.
+
+## Implementation Snapshot
+
+- The first UI cleanup slice is now implemented in the main mobile path: invitation intake, landlord access setup, escort OTP verification, and gallery entry messaging no longer lead with transport- or diagnostic-oriented framing.
+- The flat gallery surface now includes clearer loading, empty, and role-status states so the app no longer looks stalled or half-debug on first load.
+- The Android local signer module is now implemented in Kotlin and registered through the Expo local module boundary, matching the shared TypeScript signer contract used on iOS.
+- Manual Android device validation now covers landlord bootstrap, escort OTP onboarding, invitation flow, gallery access, protected media actions, and moderation flows against the Laravel hardware-signature contract.
+- Android screenshot blocking is now implemented through `expo-screen-capture` for non-development builds, while development builds intentionally bypass the block so UI work and debugging remain practical.
+- The current Android runtime path is stabilized around `newArchEnabled=false` and a `FlatList` gallery fallback so the app works reliably in the present Expo SDK 54 / React Native 0.81 environment.
+
+## Current Validation State
+
+- Validation items 1 through 3 are now satisfied for local device testing:
+  - the main tester path is materially de-noised,
+  - Android signing is accepted by Laravel on real flows,
+  - Android screenshot blocking is confirmed on sensitive surfaces outside development builds.
+- Validation items 4 and 5 remain open:
+  - a dedicated sideloadable preview APK has not yet been produced as the recorded rollout artifact,
+  - the closed-pilot rehearsal and operational sign-off are still future rollout work.
 
 ## Validation
 
