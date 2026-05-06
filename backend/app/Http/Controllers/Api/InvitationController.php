@@ -10,6 +10,7 @@ use App\Notifications\InvitationSmsNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Validation\Rule;
 
 class InvitationController extends Controller
 {
@@ -40,7 +41,15 @@ class InvitationController extends Controller
         }
 
         $validated = $request->validate([
-            'phone_number' => ['required', 'string', 'max:32'],
+            'phone_number' => ['required', 'string', 'max:32', 'regex:/^\+\d{10,15}$/'],
+            'invited_role' => ['required', Rule::in(['escort', 'landlord'])],
+            'escort_external_id' => [
+                Rule::requiredIf($request->input('invited_role') === 'escort'),
+                Rule::prohibitedIf($request->input('invited_role') === 'landlord'),
+                'nullable',
+                'integer',
+                'min:1',
+            ],
         ]);
 
         $otpCode = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
@@ -48,6 +57,8 @@ class InvitationController extends Controller
         $invitation = Invitation::query()->create([
             'landlord_id' => $landlord->id,
             'phone_number' => $validated['phone_number'],
+            'invited_role' => $validated['invited_role'],
+            'escort_external_id' => $validated['escort_external_id'] ?? null,
             'otp_token' => hash('sha256', $otpCode),
             'status' => InvitationStatus::Pending,
             'expires_at' => now()->addMinutes(10),
@@ -59,6 +70,7 @@ class InvitationController extends Controller
         return response()->json([
             'data' => [
                 'id' => $invitation->id,
+                'invited_role' => $invitation->invited_role,
                 'status' => $invitation->status->value,
                 'expires_at' => $invitation->expires_at?->toIso8601String(),
             ],

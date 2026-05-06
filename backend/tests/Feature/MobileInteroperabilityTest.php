@@ -20,12 +20,7 @@ class MobileInteroperabilityTest extends TestCase
     {
         Notification::fake();
 
-        $publicKey = <<<'PEM'
------BEGIN PUBLIC KEY-----
-    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEC9cGYkeACdl+z5bV/D0G6d25ZQVD
-    SKPkyzPBsPmI7K1vI+1g7jMXjLlb4+KDXKTABbGVfo63FeEi+5ABTf7y2g==
------END PUBLIC KEY-----
-PEM;
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
 
         $tokenResponse = $this->postJson('/api/landlords/tokens', [
             'public_key' => $publicKey,
@@ -37,8 +32,13 @@ PEM;
         $token = $tokenResponse->json('data.token');
         $timestamp = '1714252800';
         $nonce = 'nonce-123';
-        $body = '{"phone_number":"+421900111222"}';
-        $signature = 'MEYCIQCMx8bQS40cQUaFjv9/mwEqG+nWzoM/0RHANVXUtY2t/QIhAIZhYNJ0fwbYObp2LWYF3F5tBSd2/pyhwwV4GvfiDZTg';
+        $payload = [
+            'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+        ];
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/invitations', $timestamp, $nonce);
 
         Carbon::setTestNow(Carbon::createFromTimestampUTC((int) $timestamp));
 
@@ -56,6 +56,8 @@ PEM;
 
         $this->assertDatabaseHas('invitations', [
             'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
             'status' => InvitationStatus::Pending->value,
         ]);
 

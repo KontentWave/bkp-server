@@ -31,17 +31,26 @@ class FlatGalleryController extends Controller
         if ($actor instanceof Landlord) {
             $flats = Flat::query()
                 ->where('landlord_id', $actor->id)
-                ->with(['photos'])
+                ->with(['photos', 'reports'])
                 ->withCount('votes')
                 ->orderByDesc('id')
                 ->paginate($perPage)
                 ->withQueryString();
 
             $flats->getCollection()->transform(function (Flat $flat): Flat {
-                return $flat->setAttribute('my_vote', null);
+                $landlordReportSummary = $this->buildFlatLandlordReportSummary($flat);
+
+                return $flat
+                    ->setAttribute('my_vote', null)
+                    ->setAttribute('landlord_reports_count', $landlordReportSummary['count'])
+                    ->setAttribute('landlord_report_reasons', $landlordReportSummary['reason_codes']);
             });
 
-            return FlatResource::collection($flats)->response();
+            return FlatResource::collection($flats)
+                ->additional([
+                    'reported_escorts_summary' => $this->buildLandlordReportedEscortSummary($actor),
+                ])
+                ->response();
         }
 
         if (! $actor instanceof Escort) {
@@ -51,21 +60,52 @@ class FlatGalleryController extends Controller
         }
 
         $flats = $this->escortAccessibleFlatsQuery($actor)
-            ->with(['photos'])
+            ->with(['photos', 'reports'])
             ->withCount('votes')
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
 
         $flats->getCollection()->transform(function (Flat $flat) use ($actor): Flat {
+            $landlordReportSummary = $this->buildFlatLandlordReportSummary($flat);
+
             $flat->setAttribute('my_vote', $flat->votes()
                 ->where('escort_id', $actor->id)
                 ->value('is_favorite'));
+            $flat->setAttribute(
+                'my_landlord_report_reason',
+                $flat->reports
+                    ->where('reporter_escort_id', $actor->id)
+                    ->where('reported_landlord_id', $flat->landlord_id)
+                    ->sortByDesc('id')
+                    ->first()?->reason_code,
+            );
+            $flat->setAttribute('landlord_reports_count', $landlordReportSummary['count']);
+            $flat->setAttribute('landlord_report_reasons', $landlordReportSummary['reason_codes']);
 
             return $flat;
         });
 
-        return FlatResource::collection($flats)->response();
+        return FlatResource::collection($flats)
+            ->additional([
+                'reported_escorts_summary' => [],
+            ])
+            ->response();
+    }
+
+    public function reportedEscortSummary(Request $request): JsonResponse
+    {
+        $landlord = $request->user();
+
+        if (! $landlord instanceof Landlord) {
+            return response()->json([
+                'message' => 'Only landlords can access reported escort summaries.',
+            ], JsonResponse::HTTP_FORBIDDEN);
+        }
+
+        return response()->json([
+            'data' => $this->buildLandlordReportedEscortSummary($landlord),
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -283,23 +323,35 @@ class FlatGalleryController extends Controller
         }
 
         $validated = $request->validate([
-            'escort_id' => ['required', 'integer', 'exists:escorts,id'],
+            'escort_external_id' => ['required', 'integer', 'min:1'],
             'reason_code' => ['required', 'string', 'in:'.implode(',', array_column(LandlordReportReason::cases(), 'value'))],
         ]);
 
-        $escort = Escort::query()->findOrFail($validated['escort_id']);
+        $escort = Escort::query()
+            ->where('external_id', $validated['escort_external_id'])
+            ->first();
 
-        if (! $this->landlordCanReportEscort($landlord, $escort)) {
-            return response()->json([
-                'message' => 'You do not have access to report this escort.',
-            ], JsonResponse::HTTP_FORBIDDEN);
-        }
-
-        $report = FlatReport::query()->updateOrCreate([
+        $existingReport = FlatReport::query()->where([
             'flat_id' => $flat->id,
             'reporter_landlord_id' => $landlord->id,
-            'reported_escort_id' => $escort->id,
-        ], [
+            'reported_escort_external_id' => $validated['escort_external_id'],
+            'reason_code' => $validated['reason_code'],
+        ])->first();
+
+        if ($existingReport) {
+            return response()->json([
+                'message' => sprintf(
+                    'You already reported this escort for %s.',
+                    str_replace('_', ' ', $validated['reason_code'])
+                ),
+            ], JsonResponse::HTTP_CONFLICT);
+        }
+
+        $report = FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort?->id,
+            'reported_escort_external_id' => $validated['escort_external_id'],
             'reason_code' => $validated['reason_code'],
         ]);
 
@@ -309,9 +361,10 @@ class FlatGalleryController extends Controller
                 'flat_id' => $report->flat_id,
                 'reporter_landlord_id' => $report->reporter_landlord_id,
                 'reported_escort_id' => $report->reported_escort_id,
+                'reported_escort_external_id' => $report->reported_escort_external_id,
                 'reason_code' => $report->reason_code,
             ],
-        ], $report->wasRecentlyCreated ? JsonResponse::HTTP_CREATED : JsonResponse::HTTP_OK);
+        ], JsonResponse::HTTP_CREATED);
     }
 
     private function escortAccessibleFlatsQuery(Escort $escort): Builder
@@ -343,11 +396,52 @@ class FlatGalleryController extends Controller
         return false;
     }
 
-    private function landlordCanReportEscort(Landlord $landlord, Escort $escort): bool
+    /**
+     * @return array<int, array<string, int|string|null>>
+     */
+    private function buildLandlordReportedEscortSummary(Landlord $landlord): array
     {
-        return $landlord->invitations()
-            ->where('phone_number', $escort->phone_number)
-            ->where('status', InvitationStatus::Accepted)
-            ->exists();
+        return FlatReport::query()
+            ->with([
+                'flat:id,title',
+                'reportedEscort:id,phone_number',
+            ])
+            ->where('reporter_landlord_id', $landlord->id)
+            ->whereNotNull('reported_escort_external_id')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get()
+            ->map(fn (FlatReport $report): array => [
+                'report_id' => $report->id,
+                'flat_id' => $report->flat_id,
+                'flat_title' => $report->flat?->title,
+                'escort_id' => $report->reported_escort_id,
+                'escort_external_id' => $report->reported_escort_external_id,
+                'phone_number' => $report->reportedEscort?->phone_number,
+                'reason_code' => $report->reason_code,
+                'updated_at' => $report->updated_at?->toIso8601String(),
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array{count: int, reason_codes: array<int, string>}
+     */
+    private function buildFlatLandlordReportSummary(Flat $flat): array
+    {
+        $reasonCodes = $flat->reports
+            ->where('reported_landlord_id', $flat->landlord_id)
+            ->pluck('reason_code')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        return [
+            'count' => count($reasonCodes) > 0
+                ? $flat->reports->where('reported_landlord_id', $flat->landlord_id)->count()
+                : 0,
+            'reason_codes' => $reasonCodes,
+        ];
     }
 }

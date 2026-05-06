@@ -14,6 +14,7 @@ class Landlord extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
+        'phone_number',
         'public_key',
         'is_verified',
     ];

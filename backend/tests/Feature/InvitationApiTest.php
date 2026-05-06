@@ -54,7 +54,11 @@ class InvitationApiTest extends TestCase
 
         $landlordId = $tokenResponse->json('data.landlord_id');
         $token = $tokenResponse->json('data.token');
-        $payload = ['phone_number' => '+421900111222'];
+        $payload = [
+            'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+        ];
         $timestamp = (string) now()->timestamp;
         $nonce = (string) Str::uuid();
         $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/invitations', $timestamp, $nonce);
@@ -70,6 +74,8 @@ class InvitationApiTest extends TestCase
         $this->assertDatabaseHas('invitations', [
             'landlord_id' => $landlordId,
             'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
             'status' => InvitationStatus::Pending->value,
         ]);
 
@@ -100,6 +106,8 @@ class InvitationApiTest extends TestCase
 
         $response = $this->withToken($token)->postJson('/api/browser/invitations', [
             'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
         ]);
 
         $response->assertCreated();
@@ -107,6 +115,51 @@ class InvitationApiTest extends TestCase
         $this->assertDatabaseHas('invitations', [
             'landlord_id' => $landlordId,
             'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+            'status' => InvitationStatus::Pending->value,
+        ]);
+
+        Notification::assertSentOnDemand(InvitationSmsNotification::class);
+    }
+
+    #[Test]
+    public function landlord_invitation_creation_sends_generic_sms(): void
+    {
+        Notification::fake();
+
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+
+        $tokenResponse = $this->postJson('/api/landlords/tokens', [
+            'public_key' => $publicKey,
+        ]);
+
+        $tokenResponse->assertCreated();
+
+        $landlordId = $tokenResponse->json('data.landlord_id');
+        $token = $tokenResponse->json('data.token');
+        $payload = [
+            'phone_number' => '+421900111223',
+            'invited_role' => 'landlord',
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/invitations', $timestamp, $nonce);
+
+        $response = $this->withToken($token)->withHeaders([
+            'X-Hardware-Nonce' => $nonce,
+            'X-Hardware-Timestamp' => $timestamp,
+            'X-Hardware-Signature' => $signature,
+        ])->postJson('/api/invitations', $payload);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.invited_role', 'landlord');
+
+        $this->assertDatabaseHas('invitations', [
+            'landlord_id' => $landlordId,
+            'phone_number' => '+421900111223',
+            'invited_role' => 'landlord',
+            'escort_external_id' => null,
             'status' => InvitationStatus::Pending->value,
         ]);
 
@@ -121,6 +174,8 @@ class InvitationApiTest extends TestCase
         Invitation::query()->create([
             'landlord_id' => $landlord->id,
             'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
             'otp_token' => hash('sha256', '8492'),
             'status' => InvitationStatus::Pending,
             'expires_at' => now()->addMinutes(10),
@@ -141,6 +196,7 @@ class InvitationApiTest extends TestCase
         $this->assertIsString($response->json('data.token'));
 
         $this->assertDatabaseHas('escorts', [
+            'external_id' => 29637,
             'phone_number' => '+421900111222',
             'public_key' => $publicKey,
         ]);
@@ -159,6 +215,8 @@ class InvitationApiTest extends TestCase
         Invitation::query()->create([
             'landlord_id' => $landlord->id,
             'phone_number' => '+421900111222',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
             'otp_token' => hash('sha256', '8492'),
             'status' => InvitationStatus::Pending,
             'expires_at' => now()->addMinutes(10),
@@ -179,6 +237,49 @@ class InvitationApiTest extends TestCase
         $this->assertDatabaseHas('invitations', [
             'phone_number' => '+421900111222',
             'status' => InvitationStatus::Pending->value,
+        ]);
+    }
+
+    #[Test]
+    public function landlord_otp_verification_stores_public_key_and_returns_token(): void
+    {
+        $inviter = Landlord::query()->create();
+
+        Invitation::query()->create([
+            'landlord_id' => $inviter->id,
+            'phone_number' => '+421900111223',
+            'invited_role' => 'landlord',
+            'otp_token' => hash('sha256', '1234'),
+            'status' => InvitationStatus::Pending,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $publicKey = "-----BEGIN PUBLIC KEY-----\nTEST-KEY\n-----END PUBLIC KEY-----";
+
+        $response = $this->postJson('/api/verify', [
+            'phone_number' => '+421900111223',
+            'otp' => '1234',
+            'public_key' => $publicKey,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.actor_type', 'landlord')
+            ->assertJsonPath('data.actor_id', 2)
+            ->assertJsonPath('data.landlord_id', 2)
+            ->assertJsonPath('data.phone_number', '+421900111223');
+        $this->assertIsString($response->json('data.token'));
+
+        $this->assertDatabaseHas('landlords', [
+            'id' => 2,
+            'phone_number' => '+421900111223',
+            'public_key' => $publicKey,
+            'is_verified' => true,
+        ]);
+
+        $this->assertDatabaseHas('invitations', [
+            'phone_number' => '+421900111223',
+            'invited_role' => 'landlord',
+            'status' => InvitationStatus::Accepted->value,
         ]);
     }
 }

@@ -28,6 +28,9 @@ class FlatResource extends JsonResource
             'photos' => \App\Http\Resources\FlatPhotoResource::collection($this->whenLoaded('photos')),
             'votes_count' => $this->whenCounted('votes', fn (): int => (int) $this->votes_count),
             'my_vote' => $this->my_vote,
+            'landlord_reports_count' => (int) ($this->landlord_reports_count ?? 0),
+            'landlord_report_reasons' => $this->landlord_report_reasons ?? [],
+            'my_landlord_report_reason' => $this->my_landlord_report_reason,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

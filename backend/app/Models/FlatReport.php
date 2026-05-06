@@ -16,6 +16,7 @@ class FlatReport extends Model
         'reporter_escort_id',
         'reported_landlord_id',
         'reported_escort_id',
+        'reported_escort_external_id',
         'reason_code',
     ];
 

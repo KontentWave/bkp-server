@@ -14,6 +14,8 @@ class Invitation extends Model
     protected $fillable = [
         'landlord_id',
         'phone_number',
+        'invited_role',
+        'escort_external_id',
         'otp_token',
         'status',
         'expires_at',

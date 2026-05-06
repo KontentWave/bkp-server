@@ -233,6 +233,11 @@ class FlatGalleryApiTest extends TestCase
             'telegram_url' => 'https://t.me/owner_example',
             'viber_url' => 'viber://chat?number=%2B421900111222',
         ]);
+        $escort = Escort::query()->create([
+            'external_id' => 29637,
+            'phone_number' => '+421900111555',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
         $photo = $flat->photos()->create([
             'storage_disk' => 'public',
             'storage_path' => 'flat-photos/contract.jpg',
@@ -240,6 +245,13 @@ class FlatGalleryApiTest extends TestCase
             'mime_type' => 'image/jpeg',
             'byte_size' => 128,
             'sort_order' => 1,
+        ]);
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29637,
+            'reason_code' => LandlordReportReason::Drugs->value,
         ]);
 
         $timestamp = (string) now()->timestamp;
@@ -258,7 +270,7 @@ class FlatGalleryApiTest extends TestCase
         $data = $response->json();
 
         $this->assertSame(
-            ['id', 'landlord_id', 'title', 'description', 'contact', 'photos', 'votes_count', 'my_vote', 'created_at', 'updated_at'],
+            ['id', 'landlord_id', 'title', 'description', 'contact', 'photos', 'votes_count', 'my_vote', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reason', 'created_at', 'updated_at'],
             array_keys($data['data'][0]),
         );
         $this->assertSame(
@@ -271,8 +283,71 @@ class FlatGalleryApiTest extends TestCase
             array_keys($data['data'][0]['photos'][0]),
         );
         $this->assertSame(url('/api/photos/'.$photo->id.'/content'), $data['data'][0]['photos'][0]['content_url']);
+        $this->assertSame(0, $data['data'][0]['landlord_reports_count']);
+        $this->assertSame([], $data['data'][0]['landlord_report_reasons']);
+        $this->assertArrayHasKey('reported_escorts_summary', $data);
+        $this->assertSame(
+            ['report_id', 'flat_id', 'flat_title', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
+            array_keys($data['reported_escorts_summary'][0]),
+        );
+        $this->assertSame($flat->id, $data['reported_escorts_summary'][0]['flat_id']);
+        $this->assertSame('Contract Flat', $data['reported_escorts_summary'][0]['flat_title']);
+        $this->assertSame($escort->id, $data['reported_escorts_summary'][0]['escort_id']);
+        $this->assertSame(29637, $data['reported_escorts_summary'][0]['escort_external_id']);
+        $this->assertSame('+421900111555', $data['reported_escorts_summary'][0]['phone_number']);
+        $this->assertSame(LandlordReportReason::Drugs->value, $data['reported_escorts_summary'][0]['reason_code']);
         $this->assertSame(1, $data['meta']['per_page']);
         $this->assertSame(1, $data['meta']['total']);
+    }
+
+    #[Test]
+    public function landlord_can_load_reported_escort_summary_without_loading_gallery(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Moderated Flat',
+            'description' => 'Summary only endpoint.',
+        ]);
+        $escort = Escort::query()->create([
+            'external_id' => 29638,
+            'phone_number' => '+421900111556',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29638,
+            'reason_code' => LandlordReportReason::Hygiene->value,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/reported-escorts-summary', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/reported-escorts-summary', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame(
+            ['report_id', 'flat_id', 'flat_title', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
+            array_keys($data['data'][0]),
+        );
+        $this->assertSame($flat->id, $data['data'][0]['flat_id']);
+        $this->assertSame('Moderated Flat', $data['data'][0]['flat_title']);
+        $this->assertSame($escort->id, $data['data'][0]['escort_id']);
+        $this->assertSame(29638, $data['data'][0]['escort_external_id']);
+        $this->assertSame('+421900111556', $data['data'][0]['phone_number']);
+        $this->assertSame(LandlordReportReason::Hygiene->value, $data['data'][0]['reason_code']);
     }
 
     #[Test]
@@ -681,10 +756,56 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function escort_flat_gallery_includes_their_saved_landlord_report_reason(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111460');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Reported Flat',
+            'description' => 'Escort should see their saved landlord report.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4600'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::DidNotKeepAgreement->value,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', $flat->id)
+            ->assertJsonPath('data.0.landlord_reports_count', 1)
+            ->assertJsonPath('data.0.landlord_report_reasons.0', EscortReportReason::DidNotKeepAgreement->value)
+            ->assertJsonPath('data.0.my_landlord_report_reason', EscortReportReason::DidNotKeepAgreement->value);
+    }
+
+    #[Test]
     public function landlord_can_report_escort_with_fixed_reason_codes(): void
     {
         [$privateKey, $token, $landlord] = $this->createLandlordSession();
         $escort = Escort::query()->create([
+            'external_id' => 29639,
             'phone_number' => '+421900111447',
             'public_key' => $this->generateEcKeyPair()[1],
         ]);
@@ -694,16 +815,8 @@ class FlatGalleryApiTest extends TestCase
             'description' => 'Landlord can report the escort.',
         ]);
 
-        Invitation::query()->create([
-            'landlord_id' => $landlord->id,
-            'phone_number' => $escort->phone_number,
-            'otp_token' => hash('sha256', '4477'),
-            'status' => InvitationStatus::Accepted,
-            'expires_at' => now()->addMinutes(10),
-        ]);
-
         $payload = [
-            'escort_id' => $escort->id,
+            'escort_external_id' => 29639,
             'reason_code' => LandlordReportReason::DidNotPay->value,
         ];
         $timestamp = (string) now()->timestamp;
@@ -723,16 +836,18 @@ class FlatGalleryApiTest extends TestCase
             'flat_id' => $flat->id,
             'reporter_landlord_id' => $landlord->id,
             'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29639,
             'reason_code' => LandlordReportReason::DidNotPay->value,
         ]);
     }
 
     #[Test]
-    public function landlord_can_edit_existing_escort_report_reason(): void
+    public function landlord_can_record_multiple_escort_report_reasons_for_the_same_escort(): void
     {
         [$privateKey, $token, $landlord] = $this->createLandlordSession();
         [, $escortPublicKey] = $this->generateEcKeyPair();
         $escort = Escort::query()->create([
+            'external_id' => 29640,
             'phone_number' => '+421900111449',
             'public_key' => $escortPublicKey,
         ]);
@@ -742,23 +857,16 @@ class FlatGalleryApiTest extends TestCase
             'description' => 'Landlord report should update in place.',
         ]);
 
-        Invitation::query()->create([
-            'landlord_id' => $landlord->id,
-            'phone_number' => $escort->phone_number,
-            'otp_token' => hash('sha256', '4499'),
-            'status' => InvitationStatus::Accepted,
-            'expires_at' => now()->addMinutes(10),
-        ]);
-
         FlatReport::query()->create([
             'flat_id' => $flat->id,
             'reporter_landlord_id' => $landlord->id,
             'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29640,
             'reason_code' => LandlordReportReason::Drugs->value,
         ]);
 
         $payload = [
-            'escort_id' => $escort->id,
+            'escort_external_id' => 29640,
             'reason_code' => LandlordReportReason::Hygiene->value,
         ];
         $timestamp = (string) now()->timestamp;
@@ -773,14 +881,106 @@ class FlatGalleryApiTest extends TestCase
             ])
             ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
 
-        $response->assertOk()->assertJsonPath('data.reason_code', LandlordReportReason::Hygiene->value);
+        $response->assertCreated()->assertJsonPath('data.reason_code', LandlordReportReason::Hygiene->value);
         $this->assertDatabaseHas('flat_reports', [
             'flat_id' => $flat->id,
             'reporter_landlord_id' => $landlord->id,
             'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29640,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ]);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29640,
             'reason_code' => LandlordReportReason::Hygiene->value,
         ]);
+        $this->assertDatabaseCount('flat_reports', 2);
+    }
+
+    #[Test]
+    public function landlord_cannot_report_the_same_escort_for_the_same_reason_twice(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        [, $escortPublicKey] = $this->generateEcKeyPair();
+        $escort = Escort::query()->create([
+            'external_id' => 29641,
+            'phone_number' => '+421900111450',
+            'public_key' => $escortPublicKey,
+        ]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Duplicate Landlord Report Flat',
+            'description' => 'Duplicate landlord reports should be rejected.',
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29641,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ]);
+
+        $payload = [
+            'escort_external_id' => 29641,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-escort', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
+
+        $response
+            ->assertConflict()
+            ->assertJsonPath('message', 'You already reported this escort for drugs.');
         $this->assertDatabaseCount('flat_reports', 1);
+    }
+
+    #[Test]
+    public function landlord_can_report_unregistered_escort_by_external_ad_id(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Decoupled Landlord Report Flat',
+            'description' => 'Reporting no longer depends on escort app registration.',
+        ]);
+
+        $payload = [
+            'escort_external_id' => 29642,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-escort', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('data.reported_escort_id', null)
+            ->assertJsonPath('data.reported_escort_external_id', 29642);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_external_id' => 29642,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ]);
     }
 
     private function createEscortSession(string $phoneNumber): array

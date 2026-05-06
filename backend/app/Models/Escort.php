@@ -14,6 +14,7 @@ class Escort extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
+        'external_id',
         'phone_number',
         'public_key',
     ];
