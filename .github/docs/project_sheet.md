@@ -360,6 +360,10 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Guest gallery UI rendering validated:** The guest-facing gallery surface now renders contact information, protected images, vote controls, and landlord-report controls while keeping owner-only create/upload/delete actions hidden.
 - **Guest action submission validated on device:** The escort vote flow now saves real vote state successfully, and the escort landlord-report flow now saves real report state successfully from the guest gallery surface.
 - **Gallery renderer aligned with the written target:** The flat-card surface now renders through `FlashList`, closing the remaining implementation gap between the validated MVP slice and the original Step 4.2 rendering plan.
+- **Device mode is now role-locked for testers:** The app now persists a first-run `landlord` or `escort` device mode separately from the secure session, uses that lock to keep the UX readable for non-technical testers, and rejects OTP responses that do not match the selected mode.
+- **Invitations are now generalized for both roles:** The invitation contract now supports landlord and escort invites through the same signed mobile flow, with backend validation for `invited_role` and optional `escort_external_id` when the target escort is known by a public ad identifier.
+- **Report visibility policy is now explicit in product:** Landlords now see global landlord-report aggregates on flats, escorts keep their own vote/report state private, and the mobile surface does not reveal reporter identity to the opposite side.
+- **Landlord escort reports are no longer blocked on app registration:** Landlord moderation now accepts the escort's public `amaterky.sk/<id>` ad id, preserves a link to an internal escort record only when one exists, and returns the external ad id in the landlord-side reported-escort summary.
 
 ### Step 4.2 Remaining Scope
 
@@ -417,6 +421,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Android runtime path stabilized:** The Android path now runs with `newArchEnabled=false`, the secure signer module registered for Android, and the gallery surface rendered through a runtime-safe `FlatList` path so the app works reliably in the current Expo SDK 54 / React Native 0.81 setup.
 - **Android screenshot blocking implemented with a development guard:** `expo-screen-capture` now protects Android non-development builds, while development builds intentionally allow screenshots so UI work and device debugging remain practical.
 - **Physical-device install path proven:** The Android app was built, installed, and exercised successfully on a physical device, giving Step 4.3 a real parity checkpoint rather than emulator-only confidence.
+- **Tester-facing role separation is in place:** The entry flow now starts with a persistent `I am landlord` / `I am escort` mode selector, offers a reset path for device-role recovery, and keeps the shared invite flow inside the verified path for both roles.
+- **Field-test moderation semantics were simplified:** Landlord moderation input now accepts either a raw escort ad id or a pasted `amaterky.sk/<id>` URL, matching the field reality that an escorted person may be known publicly without already being registered in the app.
 
 ### Step 4.3 Remaining Scope
 

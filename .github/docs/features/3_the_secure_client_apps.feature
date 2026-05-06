@@ -26,6 +26,27 @@ Feature: Secure Mobile Client and Hardware Cryptography
       | Apple Notes share    |
       | Safari selected text |
 
+  Scenario: Device persists a tester-facing role lock separately from the secure session
+    Given the BKP app is opened on a shared tester device
+    When the user selects "I am landlord" or "I am escort" on first run
+    Then the app should persist that device mode separately from the bearer-token session metadata
+    And the selected mode should shape the onboarding and gallery entry flow on the next launch
+    And the user should be able to explicitly reset the saved device mode when recovering the device for the other role
+
+  Scenario: OTP verification rejects a secure session that does not match the selected device role
+    Given the BKP app already has a persisted tester-facing device role lock
+    When the backend returns a verified actor type that does not match the selected device role
+    Then the app should reject the OTP verification result
+    And the app should not persist the mismatched secure session
+    And the device should remain locked to the previously selected tester-facing role until it is explicitly reset
+
+  Scenario: Verified landlord or escort can submit a hardware-signed invitation through the shared in-app flow
+    Given the user is fully verified in the BKP app as either a Landlord or an Escort
+    When the user submits the shared invitation form with a sanitized phone number and a selected invited role
+    Then the app should send a hardware-signed request to "/api/invitations"
+    And the request should preserve the selected invited role in the payload
+    And the backend should accept the request for either invited role when the secure session is valid
+
   # Remaining Step 3 scope below is still planned behavior and has not yet been fully validated on device.
 
   Scenario: iOS escort securely onboards and binds a Secure Enclave hardware key
@@ -78,6 +99,21 @@ Feature: Secure Mobile Client and Hardware Cryptography
     Then the WebSocket broadcasting authorization handshake must be routed through the Secure API Interceptor
     And the handshake request must be signed with the hardware private key
     And the app should successfully receive real-time events upon a validated handshake
+
+  Scenario: Gallery surfaces preserve role-based privacy for votes and reports
+    Given the user is fully verified and can access the flat gallery
+    When the app renders landlord and escort moderation state for a flat
+    Then the landlord surface may show aggregate landlord-report counts and reasons for that flat
+    And the escort surface may show only the current escort's own vote and landlord-report state
+    And the app must never reveal which specific counterpart voted or reported through the mobile product surface
+
+  Scenario: Landlord can report an escort by public ad identifier even when the escort is not registered in app
+    Given the Landlord is fully verified and viewing an owned flat
+    When the Landlord submits an escort report using either a raw ad id or a pasted "amaterky.sk/<id>" URL
+    Then the app should normalize the public ad identifier before sending the request
+    And the secure request to "/api/flats/{id}/report-escort" should carry the normalized "escort_external_id"
+    And the backend should accept the report even when no internal Escort record exists yet
+    And the landlord-side reported-escort summary should preserve that external ad identifier for later review
 
   Scenario: iOS Share Extension successfully submits a hardware-signed invitation
     Given the Landlord highlights a sanitized phone number in iOS Safari and shares it to the BKP app

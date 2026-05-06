@@ -46,6 +46,19 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Add clean loading and empty states so the app does not appear broken during network work or first-run setup.
 - Treat the main landlord and escort entry flow as the first cleanup slice because it is the tester's first impression and currently exposes onboarding and invitation internals too directly.
 
+### Product Policy Boundary
+
+- Step 4.3 also freezes the tester-facing product rules that were still fluid during Step 4.2 implementation.
+- The mobile app should present a persistent first-run device mode choice for `landlord` or `escort` so non-technical testers are not dropped into an ambiguous mixed-role surface.
+- This tester-facing device mode must remain separate from the verified secure session metadata. The stored actor type still controls authorization, while the saved device mode controls the onboarding and navigation shape shown on the device.
+- OTP verification should reject a backend actor type that does not match the selected device mode rather than silently switching the device into the opposite tester path.
+- The invitation flow should now be treated as a shared verified action available from both roles after authentication instead of as a landlord-only developer utility.
+- Landlord and escort moderation visibility should remain asymmetric by policy:
+  - landlords may see aggregate landlord-report counts and reasons on flats they own,
+  - escorts may see only their own vote state and their own landlord-report state,
+  - neither side may see which specific counterpart voted or reported through the mobile product surface.
+- Landlord escort reporting must support the field reality that the escorted person may be known only by a public ad identifier. The mobile and backend contract should therefore accept `amaterky.sk/<id>` style escort identities without requiring a pre-existing internal app account.
+
 ### Android Parity Boundary
 
 - Android must implement the same ADR 004 signer contract as iOS through a Kotlin KeyMint / Android Keystore local module.
@@ -80,26 +93,41 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Live testing now has an explicit readiness gate instead of an informal judgment call.
 - The roadmap distinguishes product MVP completion from rollout readiness.
 - The first Step 4.3 implementation slice is clear: remove developer-facing noise from the mobile app before expanding scope.
+- Testers now get a clearer role-separated first-run experience instead of inheriting internal mixed-role assumptions from development.
+- The moderation model is clearer and more defensible because field-test users can report against real-world public escort identifiers without the app pretending every escort already exists as an internal record.
 
 ### Tradeoffs
 
 - Live deployment is deliberately slowed down in exchange for better operational control.
 - Android work becomes a blocking rollout dependency rather than a later parity follow-up.
 - Some internal convenience surfaces may need to move behind development-only tooling instead of staying visible in the main app.
+- OTP delivery now has an explicit provider-contingency risk: if Vonage account or deliverability issues persist, the rollout plan should allow a managed verification-provider swap such as Twilio Verify instead of treating the current SMS vendor as fixed.
+- The tester-facing device mode introduces one more persisted client state that must be recoverable through an explicit reset path.
+- Shared invitation capability across both roles increases product flexibility, but it also means pilot operations must be clear about who is allowed to invite whom during the first rollout.
 
 ## Implementation Snapshot
 
 - The first UI cleanup slice is now implemented in the main mobile path: invitation intake, landlord access setup, escort OTP verification, and gallery entry messaging no longer lead with transport- or diagnostic-oriented framing.
 - The flat gallery surface now includes clearer loading, empty, and role-status states so the app no longer looks stalled or half-debug on first load.
+- The main entry path now includes a persistent first-run device-role selector for `landlord` versus `escort`, plus an explicit reset path for recovering the device into the other tester mode.
+- OTP verification now enforces that the verified backend actor type matches the selected device mode before the secure session is stored locally.
+- The shared in-app invitation flow now works for both verified landlords and verified escorts and carries role-specific invitation intent through the signed backend payload.
+- Phone-number validation was tightened on both mobile and backend so malformed numbers are rejected before the team mistakes a bad payload for an SMS-provider problem.
+- Live field-testing preparation now assumes seeded or manual verification listings from earlier steps are cleaned from shared environments, because those records read like product content to non-technical testers.
 - The Android local signer module is now implemented in Kotlin and registered through the Expo local module boundary, matching the shared TypeScript signer contract used on iOS.
 - Manual Android device validation now covers landlord bootstrap, escort OTP onboarding, invitation flow, gallery access, protected media actions, and moderation flows against the Laravel hardware-signature contract.
 - Android screenshot blocking is now implemented through `expo-screen-capture` for non-development builds, while development builds intentionally bypass the block so UI work and debugging remain practical.
 - The current Android runtime path is stabilized around `newArchEnabled=false` and a `FlatList` gallery fallback so the app works reliably in the present Expo SDK 54 / React Native 0.81 environment.
+- Report visibility is now aligned with product policy in the gallery surface: landlords see aggregate landlord-report state on owned flats, escorts retain only personal vote and landlord-report state, and reporter identity stays hidden from the reported side.
+- Landlord escort moderation now accepts either a raw public ad id or a pasted `amaterky.sk/<id>` URL, and the backend persists that external escort identifier even when no internal escort record exists yet.
 
 ## Current Validation State
 
 - Validation items 1 through 3 are now satisfied for local device testing:
   - the main tester path is materially de-noised,
+  - the tester-facing role lock and role-matched OTP path are implemented,
+  - the shared invitation flow works from the verified mobile path,
+  - the softer landlord moderation contract now works against external escort ad ids,
   - Android signing is accepted by Laravel on real flows,
   - Android screenshot blocking is confirmed on sensitive surfaces outside development builds.
 - Validation items 4 and 5 remain open:
@@ -111,13 +139,19 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 Step 4.3 should be treated as validated only when all of the following are true:
 
 1. The cleaned mobile UI no longer exposes debug-oriented copy, raw transport framing, or internal diagnostic surfaces in the main tester path.
-2. Android device onboarding completes with KeyMint-backed signing that Laravel accepts.
-3. Android screenshot blocking is confirmed on sensitive screens.
-4. The preview APK can be distributed and installed reliably by pilot testers.
-5. A closed-pilot rehearsal succeeds end to end without security or operational regressions.
+2. The tester-facing device mode remains stable across launches and the secure session cannot silently cross from one role path into the other.
+3. Shared verified invitation flow works with the intended role-aware payloads and rejects malformed phone numbers before SMS dispatch.
+4. Landlord moderation works against external escort ad identifiers without requiring prior app registration, while the mobile product surface still hides reporter identity appropriately.
+5. Android device onboarding completes with KeyMint-backed signing that Laravel accepts.
+6. Android screenshot blocking is confirmed on sensitive screens.
+7. The preview APK can be distributed and installed reliably by pilot testers.
+8. A closed-pilot rehearsal succeeds end to end without security or operational regressions.
 
 ## Future Development Carry-Forwards
 
 - Keep rollout gating explicit for future sensitive launches instead of assuming local MVP completion is enough.
 - Preserve the closed-pilot model until operational behavior is proven stable.
 - Treat any broader release as a later decision that requires its own readiness review.
+- Keep the OTP provider integration behind a replaceable backend boundary so an operational move from Vonage to Twilio Verify stays a contained rollout task rather than a full auth rewrite.
+- Keep the distinction between tester-facing device mode and secure authorization state explicit in future UX work so convenience UI does not leak into the trust model.
+- Preserve external public escort identifiers as a first-class moderation input even if future product work introduces richer internal escort profiles.
