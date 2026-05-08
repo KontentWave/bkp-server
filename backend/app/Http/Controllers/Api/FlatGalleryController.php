@@ -29,6 +29,7 @@ class FlatGalleryController extends Controller
         $perPage = (int) ($validated['per_page'] ?? 12);
 
         if ($actor instanceof Landlord) {
+            $reportedEscortSummaryAccess = $this->buildReportedEscortSummaryAccess($actor);
             $flats = Flat::query()
                 ->where('landlord_id', $actor->id)
                 ->with(['photos', 'reports'])
@@ -48,7 +49,11 @@ class FlatGalleryController extends Controller
 
             return FlatResource::collection($flats)
                 ->additional([
-                    'reported_escorts_summary' => $this->buildLandlordReportedEscortSummary($actor),
+                    'reported_escorts_summary' => $reportedEscortSummaryAccess['data'],
+                    'reported_escorts_summary_access' => [
+                        'can_view_reports' => $reportedEscortSummaryAccess['can_view_reports'],
+                        'message' => $reportedEscortSummaryAccess['message'],
+                    ],
                 ])
                 ->response();
         }
@@ -89,6 +94,10 @@ class FlatGalleryController extends Controller
         return FlatResource::collection($flats)
             ->additional([
                 'reported_escorts_summary' => [],
+                'reported_escorts_summary_access' => [
+                    'can_view_reports' => false,
+                    'message' => 'Only landlords can review reported escorts.',
+                ],
             ])
             ->response();
     }
@@ -103,8 +112,14 @@ class FlatGalleryController extends Controller
             ], JsonResponse::HTTP_FORBIDDEN);
         }
 
+        $summaryAccess = $this->buildReportedEscortSummaryAccess($landlord);
+
         return response()->json([
-            'data' => $this->buildLandlordReportedEscortSummary($landlord),
+            'data' => $summaryAccess['data'],
+            'meta' => [
+                'can_view_reports' => $summaryAccess['can_view_reports'],
+                'message' => $summaryAccess['message'],
+            ],
         ]);
     }
 
@@ -406,7 +421,6 @@ class FlatGalleryController extends Controller
                 'flat:id,title',
                 'reportedEscort:id,phone_number',
             ])
-            ->where('reporter_landlord_id', $landlord->id)
             ->whereNotNull('reported_escort_external_id')
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
@@ -422,6 +436,30 @@ class FlatGalleryController extends Controller
                 'updated_at' => $report->updated_at?->toIso8601String(),
             ])
             ->all();
+    }
+
+    /**
+     * @return array{can_view_reports: bool, message: string, data: array<int, array<string, int|string|null>>}
+     */
+    private function buildReportedEscortSummaryAccess(Landlord $landlord): array
+    {
+        $hasPublishedFlat = Flat::query()
+            ->where('landlord_id', $landlord->id)
+            ->exists();
+
+        if (! $hasPublishedFlat) {
+            return [
+                'can_view_reports' => false,
+                'message' => 'Publish at least one flat before reviewing reported escorts.',
+                'data' => [],
+            ];
+        }
+
+        return [
+            'can_view_reports' => true,
+            'message' => '',
+            'data' => $this->buildLandlordReportedEscortSummary($landlord),
+        ];
     }
 
     /**

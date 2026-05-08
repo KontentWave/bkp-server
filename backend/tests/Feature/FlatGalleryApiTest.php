@@ -286,6 +286,8 @@ class FlatGalleryApiTest extends TestCase
         $this->assertSame(0, $data['data'][0]['landlord_reports_count']);
         $this->assertSame([], $data['data'][0]['landlord_report_reasons']);
         $this->assertArrayHasKey('reported_escorts_summary', $data);
+        $this->assertSame(true, $data['reported_escorts_summary_access']['can_view_reports']);
+        $this->assertSame('', $data['reported_escorts_summary_access']['message']);
         $this->assertSame(
             ['report_id', 'flat_id', 'flat_title', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
             array_keys($data['reported_escorts_summary'][0]),
@@ -338,6 +340,9 @@ class FlatGalleryApiTest extends TestCase
         $response->assertOk();
         $data = $response->json();
 
+        $this->assertSame(true, $data['meta']['can_view_reports']);
+        $this->assertSame('', $data['meta']['message']);
+
         $this->assertSame(
             ['report_id', 'flat_id', 'flat_title', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
             array_keys($data['data'][0]),
@@ -348,6 +353,106 @@ class FlatGalleryApiTest extends TestCase
         $this->assertSame(29638, $data['data'][0]['escort_external_id']);
         $this->assertSame('+421900111556', $data['data'][0]['phone_number']);
         $this->assertSame(LandlordReportReason::Hygiene->value, $data['data'][0]['reason_code']);
+    }
+
+    #[Test]
+    public function landlord_reported_escort_summary_is_global_across_landlords(): void
+    {
+        $reporterLandlord = Landlord::query()->create([
+            'public_key' => $this->generateEcKeyPair()[1],
+            'is_verified' => true,
+        ]);
+        [$viewerPrivateKey, $viewerToken, $viewerLandlord] = $this->createLandlordSession();
+
+        $reportedFlat = Flat::query()->create([
+            'landlord_id' => $reporterLandlord->id,
+            'title' => 'Reported Flat',
+            'description' => 'Created by the reporting landlord.',
+        ]);
+
+        Flat::query()->create([
+            'landlord_id' => $viewerLandlord->id,
+            'title' => 'Viewer Flat',
+            'description' => 'Keeps reported-escort access enabled for the viewer.',
+        ]);
+
+        $escort = Escort::query()->create([
+            'external_id' => 29639,
+            'phone_number' => '+421900111557',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $reportedFlat->id,
+            'reporter_landlord_id' => $reporterLandlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29639,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ]);
+
+        $summaryTimestamp = (string) now()->timestamp;
+        $summaryNonce = (string) Str::uuid();
+        $summarySignature = $this->signHardwareContent('', $viewerPrivateKey, 'GET', '/api/reported-escorts-summary', $summaryTimestamp, $summaryNonce);
+
+        $response = $this->call('GET', '/api/reported-escorts-summary', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$viewerToken,
+            'HTTP_X_HARDWARE_NONCE' => $summaryNonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $summaryTimestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $summarySignature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('meta.can_view_reports', true);
+        $response->assertJsonCount(1, 'data');
+        $response->assertJsonPath('data.0.flat_id', $reportedFlat->id);
+        $response->assertJsonPath('data.0.flat_title', 'Reported Flat');
+        $response->assertJsonPath('data.0.escort_id', $escort->id);
+        $response->assertJsonPath('data.0.escort_external_id', 29639);
+        $response->assertJsonPath('data.0.phone_number', '+421900111557');
+        $response->assertJsonPath('data.0.reason_code', LandlordReportReason::Drugs->value);
+
+        $indexTimestamp = (string) now()->timestamp;
+        $indexNonce = (string) Str::uuid();
+        $indexSignature = $this->signHardwareContent('', $viewerPrivateKey, 'GET', '/api/flats', $indexTimestamp, $indexNonce);
+
+        $indexResponse = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$viewerToken,
+            'HTTP_X_HARDWARE_NONCE' => $indexNonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $indexTimestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $indexSignature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $indexResponse->assertOk();
+        $indexResponse->assertJsonCount(1, 'reported_escorts_summary');
+        $indexResponse->assertJsonPath('reported_escorts_summary.0.flat_id', $reportedFlat->id);
+        $indexResponse->assertJsonPath('reported_escorts_summary.0.escort_external_id', 29639);
+    }
+
+    #[Test]
+    public function landlord_without_published_flats_cannot_view_reported_escort_summary(): void
+    {
+        [$privateKey, $token] = $this->createLandlordSession();
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/reported-escorts-summary', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/reported-escorts-summary', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame([], $data['data']);
+        $this->assertSame(false, $data['meta']['can_view_reports']);
+        $this->assertSame('Publish at least one flat before reviewing reported escorts.', $data['meta']['message']);
     }
 
     #[Test]
