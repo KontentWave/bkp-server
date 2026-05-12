@@ -363,6 +363,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Device mode is now role-locked for testers:** The app now persists a first-run `landlord` or `escort` device mode separately from the secure session, uses that lock to keep the UX readable for non-technical testers, and rejects OTP responses that do not match the selected mode.
 - **Invitations are now generalized for both roles:** The invitation contract now supports landlord and escort invites through the same signed mobile flow, with backend validation for `invited_role` and optional `escort_external_id` when the target escort is known by a public ad identifier.
 - **Report visibility policy is now explicit in product:** Landlords now see global landlord-report aggregates on flats, escorts keep their own vote/report state private, and the mobile surface does not reveal reporter identity to the opposite side.
+- **Landlord-side reported-escort history is now gated:** A landlord must publish at least one flat before the app reveals the landlord-side reported-escort summary, reducing the chance of using the app as a pure report-browsing surface without listing participation.
+- **Landlord-side reported-escort visibility is now global:** Once that gate is passed, landlords can see escort reports filed by any landlord, even when there is only one recorded report, while the product surface still hides which landlord submitted it.
 - **Landlord escort reports are no longer blocked on app registration:** Landlord moderation now accepts the escort's public `amaterky.sk/<id>` ad id, preserves a link to an internal escort record only when one exists, and returns the external ad id in the landlord-side reported-escort summary.
 
 ### Step 4.2 Remaining Scope
@@ -372,7 +374,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.3: Field Test Readiness (UI Polish & Android Parity)
 
-- **Status:** Partially completed for local device validation on May 4, 2026. The UI clean-up slice, Android signer parity, and Android runtime validation are now complete on physical devices. Preview APK distribution and the closed-pilot rollout gate remain open.
+- **Status:** Partially completed for production-like device validation on May 10, 2026. The UI clean-up slice, Android signer parity, Android runtime validation, deployed-backend reachability, and two-device landlord onboarding are now proven on physical devices. Preview APK distribution and the closed-pilot rollout gate remain open.
 - **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md).
 - **Action:** Strip all developer diagnostic noise from the UI to create a confident, non-technical user experience, and implement the pending Android platform layer to enable end-to-end MVP testing.
 - **Platform Target:** Field testing must support both product contracts (Landlord and Escort) on both iOS and Android. Step 4.3 is not only about Android escorts; it is the parity and rollout-readiness step for the two-role mobile product across both platforms.
@@ -405,6 +407,12 @@ The critical architectural boundary is still Task 1, but it should now be treate
     - Prepare support and moderation procedures for sensitive reports, mistaken invites, abusive behavior, and urgent content removal.
     - Run one end-to-end cross-platform rehearsal with the exact pilot infrastructure before inviting real testers.
     - Do not expand beyond the closed pilot until the rehearsal and the first pilot cycle complete without security or operational regressions.
+  - **Initial Escort Pilot Distribution Plan:**
+    - Android escorts should install through a hosted preview APK link.
+    - iOS escorts should install through TestFlight rather than a normal file-host download.
+    - Start with exactly one trusted Android escort and one trusted iOS escort.
+    - Only invite escorts whose `amaterky.sk` ad is active and publicly exposes the phone number at the time of invitation.
+    - Run each escort onboarding while the team watches production queue-worker output and SMS-provider behavior live.
 - **First Implementation Slice:** Start with the cross-platform UI cleanup path in the main mobile entry screen: remove developer-facing invitation and onboarding diagnostics, convert transport-oriented copy into product-facing language, and keep the first tester flow readable before Android parity work begins.
 - **Test Plan:**
   - `manual_e2e_ui_cleanliness`: Verify no debug info is visible during the happy path or error paths.
@@ -423,9 +431,37 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Physical-device install path proven:** The Android app was built, installed, and exercised successfully on a physical device, giving Step 4.3 a real parity checkpoint rather than emulator-only confidence.
 - **Tester-facing role separation is in place:** The entry flow now starts with a persistent `I am landlord` / `I am escort` mode selector, offers a reset path for device-role recovery, and keeps the shared invite flow inside the verified path for both roles.
 - **Field-test moderation semantics were simplified:** Landlord moderation input now accepts either a raw escort ad id or a pasted `amaterky.sk/<id>` URL, matching the field reality that an escorted person may be known publicly without already being registered in the app.
+- **Shared-hosting production backend is now live:** The Laravel deployment at `https://bkp-server.zafo-forum.sk` now serves the app successfully through the shared-hosting workaround, responds on `/up`, and returns JSON validation from `/api/verify`.
+- **Two-device landlord production rehearsal is complete:** Android and iOS each completed landlord OTP onboarding against the deployed backend, producing two separate verified landlord rows with distinct hardware public keys and device tokens.
+- **Live queued SMS invitation delivery is now validated operationally:** A real Android-to-iOS landlord invitation was created against production, the queued notification path was exercised, and delivery succeeded once the queue worker, Vonage credentials, sender config, and Laravel config cache were all corrected.
+- **The next pilot lane is concretely defined:** real escort testing should proceed with one trusted Android escort via hosted APK and one trusted iOS escort via TestFlight, each using a live ad-bound OTP flow rather than local bootstrap shortcuts.
 
 ### Step 4.3 Remaining Scope
 
 - **Preview APK distribution is still pending:** The roadmap target for a dedicated sideloadable preview APK has not been completed yet; current validation used development and debug-style Android builds on a physical device.
 - **Closed-pilot operations are still pending:** Tester invitation governance, revocation flow, incident handling, monitoring, and the first rehearsal against pilot infrastructure still need their own rollout pass.
 - **UI polish is intentionally not finished:** The app is now functionally coherent and much less developer-facing, but spacing, visual rhythm, and section consistency are deferred to a later polish slice instead of blocking the Android parity checkpoint.
+- **Production operations are not yet automated:** The current shared-hosting deployment still relies on explicit operational care for queue worker uptime and configuration-cache refreshes when SMS-provider settings change.
+- **Escort identity redesign is now a mandatory follow-up expansion:** The current escort contract is sufficient for field testing, but it is no longer considered a durable production identity model because escorts can rotate ad IDs and phone numbers over time.
+- **Landlord report-visibility hardening is still future work:** The current `publish at least one flat first` gate is intentionally light for pilot use. A later anti-misuse hardening pass should require stronger landlord credibility signals, such as one flat confirmed by at least three registered escorts, before broader escort-report visibility is expanded.
+- **Current landlord report visibility is intentionally broad after the first gate:** The present field-test contract exposes globally shared landlord-side escort reports immediately after a landlord publishes at least one flat. Any stricter threshold belongs to a later hardening pass rather than the current pilot contract.
+
+### Mandatory Post-Pilot Expansion: Stable Escort Identity With Alias History
+
+- The product must move from a single-phone and single-ad escort contract to a stable internal escort identity with historical aliases.
+- The database should keep one hidden internal escort row id as the durable subject of moderation, trust, and audit history.
+- Public ad IDs and phone numbers should be modeled as mutable escort aliases rather than as the escort's primary key.
+- The mobile and moderation surfaces should display ad IDs and phone numbers only; the internal escort row id stays hidden from normal product UI and may exist only in admin URLs, internal joins, or tooling.
+- The first observed ad ID may be preserved as the earliest known alias for orientation and audit purposes, but it should not become the real database primary key because ad IDs can disappear, be replaced, or multiply.
+- Escort authentication should become ad-bound and scraper-backed rather than relying on inviter-entered phone numbers as the trust source.
+- The inviter should submit an ad ID or ad URL, the backend should scrape the current ad phone during invitation, and installation should validate again against the currently scraped phone before the device is bound.
+- The data model should support:
+  - multiple historical ad IDs for one escort,
+  - multiple historical phone numbers for one escort,
+  - active versus historical alias state,
+  - attribution of how a new alias was learned, such as invitation flow, admin merge, or moderation review.
+- OTP onboarding should bind the device through the phone number currently scraped from the active ad, but moderation and repeat-incident tracking must continue across the full alias history of that escort.
+- Landlord-side access to moderation history should also evolve beyond the first simple flat-publication gate. After pilot learning, broader escort-report visibility should require stronger evidence that the landlord operates a real listing, for example a flat that has been confirmed by at least three registered escorts, so the moderation surface is harder to misuse for passive data harvesting.
+- Once an escort is onboarded, the backend should inspect the ad at a controlled interval such as once per day so alias history and current activity remain fresh without sending a new OTP each time.
+- Support for the paid-but-hidden ad state such as `Vypnutý zadávateľom` is expected, but it can remain a mandatory follow-up after the first implementation if the initial authentication boundary only supports ads that are fully active and publicly expose the phone number.
+- This redesign is intentionally deferred until after successful live testing so the currently validated invitation, onboarding, and signed-request flows are not destabilized immediately before field use.
