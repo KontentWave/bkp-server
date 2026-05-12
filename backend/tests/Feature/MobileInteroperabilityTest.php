@@ -2,11 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Notifications\InvitationSmsNotification;
 use App\Enums\InvitationStatus;
+use App\Jobs\SendSmsMessageJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Notifications\AnonymousNotifiable;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Carbon;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -18,7 +17,10 @@ class MobileInteroperabilityTest extends TestCase
     #[Test]
     public function laravel_accepts_mobile_signed_invitation_fixture(): void
     {
-        Notification::fake();
+        Queue::fake();
+        $this->fakeEscortAdScraper([
+            29637 => $this->makeEscortAdSnapshot(29637, '+421900111222'),
+        ]);
 
         [$privateKey, $publicKey] = $this->generateEcKeyPair();
 
@@ -61,9 +63,7 @@ class MobileInteroperabilityTest extends TestCase
             'status' => InvitationStatus::Pending->value,
         ]);
 
-        Notification::assertSentOnDemand(InvitationSmsNotification::class, function (InvitationSmsNotification $notification, array $channels, AnonymousNotifiable $notifiable): bool {
-            return $channels === ['vonage'];
-        });
+        Queue::assertPushed(SendSmsMessageJob::class);
 
         Carbon::setTestNow();
     }

@@ -4,14 +4,27 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\InvitationStatus;
 use App\Http\Controllers\Controller;
+use App\Jobs\RetryEscortAdScrapeJob;
 use App\Models\Escort;
 use App\Models\Invitation;
 use App\Models\Landlord;
+use App\Services\EscortAds\EscortAdScrapeException;
+use App\Services\EscortAds\EscortAdScraper;
+use App\Services\EscortAds\EscortAdSnapshot;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class VerificationController extends Controller
 {
+    public function __construct(private readonly EscortAdScraper $escortAdScraper)
+    {
+    }
+
+    private function shouldEnforceEscortPhoneMatch(): bool
+    {
+        return (bool) config('services.amaterky.enforce_phone_match', true);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -33,11 +46,11 @@ class VerificationController extends Controller
             ], JsonResponse::HTTP_UNAUTHORIZED);
         }
 
-        $invitation->update([
-            'status' => InvitationStatus::Accepted,
-        ]);
-
         if ($invitation->invited_role === 'landlord') {
+            $invitation->update([
+                'status' => InvitationStatus::Accepted,
+            ]);
+
             $landlord = Landlord::query()->firstOrNew([
                 'phone_number' => $validated['phone_number'],
             ]);
@@ -60,12 +73,40 @@ class VerificationController extends Controller
             ]);
         }
 
+        try {
+            $snapshot = $this->revalidateEscortInvitation($invitation);
+        } catch (EscortAdScrapeException $exception) {
+            $this->queueRetryForTransientEscortScrapeFailure($exception, $invitation);
+
+            return response()->json([
+                'message' => $exception->getMessage(),
+            ], $exception->statusCode);
+        }
+
+        if (
+            $this->shouldEnforceEscortPhoneMatch()
+            && $snapshot !== null
+            && $snapshot->phoneNumber !== $validated['phone_number']
+        ) {
+            return response()->json([
+                'message' => 'The escort ad phone changed before activation. Request a new invitation.',
+            ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $invitation->update([
+            'status' => InvitationStatus::Accepted,
+            'phone_number' => $snapshot?->phoneNumber ?? $validated['phone_number'],
+            'escort_external_id' => $snapshot?->externalId ?? $invitation->escort_external_id,
+            'escort_ad_url' => $snapshot?->adUrl ?? $invitation->escort_ad_url,
+            'phone_scraped_at' => $snapshot?->scrapedAt ?? $invitation->phone_scraped_at,
+        ]);
+
         $escort = Escort::query()->firstOrNew([
-            'phone_number' => $validated['phone_number'],
+            'phone_number' => $snapshot?->phoneNumber ?? $validated['phone_number'],
         ]);
 
         $escort->public_key = $validated['public_key'];
-        $escort->external_id = $invitation->escort_external_id;
+        $escort->external_id = $snapshot?->externalId ?? $invitation->escort_external_id;
         $escort->save();
 
         $token = $escort->createToken('escort-device')->plainTextToken;
@@ -80,5 +121,37 @@ class VerificationController extends Controller
                 'token' => $token,
             ],
         ]);
+    }
+
+    private function revalidateEscortInvitation(Invitation $invitation): ?EscortAdSnapshot
+    {
+        if (! is_string($invitation->escort_ad_url) && ! is_int($invitation->escort_external_id)) {
+            return null;
+        }
+
+        if (is_string($invitation->escort_ad_url) && $invitation->escort_ad_url !== '') {
+            return $this->escortAdScraper->scrapeByUrl($invitation->escort_ad_url);
+        }
+
+        if (is_int($invitation->escort_external_id)) {
+            return $this->escortAdScraper->scrapeByExternalId($invitation->escort_external_id);
+        }
+
+        return null;
+    }
+
+    private function queueRetryForTransientEscortScrapeFailure(
+        EscortAdScrapeException $exception,
+        Invitation $invitation,
+    ): void {
+        if (! $exception->transient) {
+            return;
+        }
+
+        RetryEscortAdScrapeJob::dispatch(
+            $invitation->escort_external_id,
+            $invitation->escort_ad_url,
+            'verification',
+        );
     }
 }

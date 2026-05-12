@@ -16,6 +16,8 @@ class Invitation extends Model
         'phone_number',
         'invited_role',
         'escort_external_id',
+        'escort_ad_url',
+        'phone_scraped_at',
         'otp_token',
         'status',
         'expires_at',
@@ -26,6 +28,7 @@ class Invitation extends Model
         return [
             'status' => InvitationStatus::class,
             'expires_at' => 'datetime',
+            'phone_scraped_at' => 'datetime',
         ];
     }
 
