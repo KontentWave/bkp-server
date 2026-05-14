@@ -1,0 +1,24 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Foundation\Application;
+use Symfony\Component\Console\Input\ArgvInput;
+
+define('LARAVEL_START', microtime(true));
+
+require __DIR__.'/../vendor/autoload.php';
+
+/** @var Application $app */
+$app = require __DIR__.'/../bootstrap/app.php';
+
+$status = $app->handleCommand(new ArgvInput([
+    'artisan',
+    'queue:work',
+    '--queue=default',
+    '--stop-when-empty',
+    '--tries=3',
+    '--timeout=120',
+]));
+
+exit($status);
