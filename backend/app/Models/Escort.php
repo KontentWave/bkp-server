@@ -2,13 +2,18 @@
 
 namespace App\Models;
 
-use App\Models\FlatReport;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * @property int $id
+ * @property int|null $external_id
+ * @property string $phone_number
+ * @property string|null $public_key
+ */
 class Escort extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
@@ -21,7 +26,7 @@ class Escort extends Authenticatable
 
     public function votes(): HasMany
     {
-        return $this->hasMany(\App\Models\Vote::class);
+        return $this->hasMany(Vote::class);
     }
 
     public function submittedReports(): HasMany

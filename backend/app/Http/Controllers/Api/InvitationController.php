@@ -18,9 +18,7 @@ use Illuminate\Validation\Rule;
 
 class InvitationController extends Controller
 {
-    public function __construct(private readonly EscortAdScraper $escortAdScraper)
-    {
-    }
+    public function __construct(private readonly EscortAdScraper $escortAdScraper) {}
 
     private function shouldEnforceEscortPhoneMatch(): bool
     {

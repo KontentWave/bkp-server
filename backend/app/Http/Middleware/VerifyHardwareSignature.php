@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Escort;
+use App\Models\Landlord;
 use Closure;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -21,13 +23,19 @@ class VerifyHardwareSignature
         $signature = $request->header('X-Hardware-Signature');
         $nonce = $request->header('X-Hardware-Nonce');
         $timestamp = $request->header('X-Hardware-Timestamp');
+
+        /** @var Escort|Landlord|null $actor */
         $actor = $request->user();
 
-        if (! is_string($signature) || ! is_string($nonce) || ! is_string($timestamp) || $actor === null) {
+        if (! is_string($signature) || ! is_string($nonce) || ! is_string($timestamp)) {
             return response()->json(['message' => 'Hardware signature is required.'], Response::HTTP_UNAUTHORIZED);
         }
 
-        if ($actor === null || ! is_string($actor->public_key) || $actor->public_key === '') {
+        if (! $actor instanceof Landlord && ! $actor instanceof Escort) {
+            return response()->json(['message' => 'Unknown hardware identity.'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        if (! is_string($actor->public_key) || $actor->public_key === '') {
             return response()->json(['message' => 'Unknown hardware identity.'], Response::HTTP_UNAUTHORIZED);
         }
 
@@ -42,7 +50,7 @@ class VerifyHardwareSignature
         }
 
         $timestampValue = (int) $timestamp;
-        $allowedSkew = (int) env('HARDWARE_SIGNATURE_TTL_SECONDS', 300);
+        $allowedSkew = (int) config('services.hardware_signature.ttl_seconds', 300);
 
         if (abs(now()->timestamp - $timestampValue) > $allowedSkew) {
             return response()->json(['message' => 'Hardware timestamp has expired.'], Response::HTTP_UNAUTHORIZED);

@@ -2,13 +2,18 @@
 
 namespace App\Models;
 
-use App\Models\FlatReport;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * @property int $id
+ * @property string $phone_number
+ * @property string|null $public_key
+ * @property bool $is_verified
+ */
 class Landlord extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
@@ -33,7 +38,7 @@ class Landlord extends Authenticatable
 
     public function flats(): HasMany
     {
-        return $this->hasMany(\App\Models\Flat::class);
+        return $this->hasMany(Flat::class);
     }
 
     public function submittedReports(): HasMany

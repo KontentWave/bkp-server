@@ -62,6 +62,10 @@ return [
         'timeout' => env('WEBSHARE_TIMEOUT', 20),
     ],
 
+    'hardware_signature' => [
+        'ttl_seconds' => env('HARDWARE_SIGNATURE_TTL_SECONDS', 300),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

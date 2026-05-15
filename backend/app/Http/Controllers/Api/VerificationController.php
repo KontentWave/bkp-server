@@ -16,9 +16,7 @@ use Illuminate\Http\Request;
 
 class VerificationController extends Controller
 {
-    public function __construct(private readonly EscortAdScraper $escortAdScraper)
-    {
-    }
+    public function __construct(private readonly EscortAdScraper $escortAdScraper) {}
 
     private function shouldEnforceEscortPhoneMatch(): bool
     {
@@ -93,20 +91,32 @@ class VerificationController extends Controller
             ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        if ($snapshot !== null) {
+            $resolvedPhoneNumber = $snapshot->phoneNumber;
+            $resolvedExternalId = $snapshot->externalId;
+            $resolvedAdUrl = $snapshot->adUrl;
+            $resolvedScrapedAt = $snapshot->scrapedAt;
+        } else {
+            $resolvedPhoneNumber = $validated['phone_number'];
+            $resolvedExternalId = $invitation->escort_external_id;
+            $resolvedAdUrl = $invitation->escort_ad_url;
+            $resolvedScrapedAt = $invitation->phone_scraped_at;
+        }
+
         $invitation->update([
             'status' => InvitationStatus::Accepted,
-            'phone_number' => $snapshot?->phoneNumber ?? $validated['phone_number'],
-            'escort_external_id' => $snapshot?->externalId ?? $invitation->escort_external_id,
-            'escort_ad_url' => $snapshot?->adUrl ?? $invitation->escort_ad_url,
-            'phone_scraped_at' => $snapshot?->scrapedAt ?? $invitation->phone_scraped_at,
+            'phone_number' => $resolvedPhoneNumber,
+            'escort_external_id' => $resolvedExternalId,
+            'escort_ad_url' => $resolvedAdUrl,
+            'phone_scraped_at' => $resolvedScrapedAt,
         ]);
 
         $escort = Escort::query()->firstOrNew([
-            'phone_number' => $snapshot?->phoneNumber ?? $validated['phone_number'],
+            'phone_number' => $resolvedPhoneNumber,
         ]);
 
         $escort->public_key = $validated['public_key'];
-        $escort->external_id = $snapshot?->externalId ?? $invitation->escort_external_id;
+        $escort->external_id = $resolvedExternalId;
         $escort->save();
 
         $token = $escort->createToken('escort-device')->plainTextToken;
