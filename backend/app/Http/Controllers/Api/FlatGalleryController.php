@@ -6,6 +6,7 @@ use App\Enums\EscortReportReason;
 use App\Enums\InvitationStatus;
 use App\Enums\LandlordReportReason;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\FlatPhotoResource;
 use App\Http\Resources\FlatResource;
 use App\Models\Escort;
 use App\Models\Flat;
@@ -15,6 +16,7 @@ use App\Models\Landlord;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -38,7 +40,10 @@ class FlatGalleryController extends Controller
                 ->paginate($perPage)
                 ->withQueryString();
 
-            $flats->getCollection()->transform(function (Flat $flat): Flat {
+            /** @var Collection<int, Flat> $flatCollection */
+            $flatCollection = $flats->getCollection();
+
+            $flatCollection->transform(function (Flat $flat): Flat {
                 $landlordReportSummary = $this->buildFlatLandlordReportSummary($flat);
 
                 return $flat
@@ -71,7 +76,10 @@ class FlatGalleryController extends Controller
             ->paginate($perPage)
             ->withQueryString();
 
-        $flats->getCollection()->transform(function (Flat $flat) use ($actor): Flat {
+        /** @var Collection<int, Flat> $flatCollection */
+        $flatCollection = $flats->getCollection();
+
+        $flatCollection->transform(function (Flat $flat) use ($actor): Flat {
             $landlordReportSummary = $this->buildFlatLandlordReportSummary($flat);
 
             $flat->setAttribute('my_vote', $flat->votes()
@@ -198,7 +206,7 @@ class FlatGalleryController extends Controller
             'sort_order' => $sortOrder,
         ]);
 
-        return \App\Http\Resources\FlatPhotoResource::make($photo)
+        return FlatPhotoResource::make($photo)
             ->response()
             ->setStatusCode(JsonResponse::HTTP_CREATED);
     }
@@ -416,7 +424,8 @@ class FlatGalleryController extends Controller
      */
     private function buildLandlordReportedEscortSummary(Landlord $landlord): array
     {
-        return FlatReport::query()
+        /** @var \Illuminate\Database\Eloquent\Collection<int, FlatReport> $reports */
+        $reports = FlatReport::query()
             ->with([
                 'flat:id,title',
                 'reportedEscort:id,phone_number',
@@ -424,7 +433,9 @@ class FlatGalleryController extends Controller
             ->whereNotNull('reported_escort_external_id')
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
-            ->get()
+            ->get();
+
+        return $reports
             ->map(fn (FlatReport $report): array => [
                 'report_id' => $report->id,
                 'flat_id' => $report->flat_id,

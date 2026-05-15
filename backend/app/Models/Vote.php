@@ -6,6 +6,12 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $flat_id
+ * @property int $escort_id
+ * @property bool $is_favorite
+ */
 class Vote extends Model
 {
     use HasFactory;
@@ -23,13 +29,19 @@ class Vote extends Model
         ];
     }
 
+    /**
+     * @return BelongsTo<Flat, $this>
+     */
     public function flat(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Flat::class);
+        return $this->belongsTo(Flat::class);
     }
 
+    /**
+     * @return BelongsTo<Escort, $this>
+     */
     public function escort(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\Escort::class);
+        return $this->belongsTo(Escort::class);
     }
 }

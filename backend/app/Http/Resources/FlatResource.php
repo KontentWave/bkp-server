@@ -2,10 +2,18 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Flat;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin \App\Models\Flat */
+/**
+ * @mixin Flat
+ *
+ * @property bool|null $my_vote
+ * @property int|null $landlord_reports_count
+ * @property array<int, string> $landlord_report_reasons
+ * @property string|null $my_landlord_report_reason
+ */
 class FlatResource extends JsonResource
 {
     /**
@@ -25,7 +33,7 @@ class FlatResource extends JsonResource
                 'telegram_url' => $this->telegram_url,
                 'viber_url' => $this->viber_url,
             ],
-            'photos' => \App\Http\Resources\FlatPhotoResource::collection($this->whenLoaded('photos')),
+            'photos' => FlatPhotoResource::collection($this->whenLoaded('photos')),
             'votes_count' => $this->whenCounted('votes', fn (): int => (int) $this->votes_count),
             'my_vote' => $this->my_vote,
             'landlord_reports_count' => (int) ($this->landlord_reports_count ?? 0),
