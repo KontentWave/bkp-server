@@ -6,6 +6,7 @@ use App\Enums\InvitationStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class Invitation extends Model
 {
@@ -13,6 +14,8 @@ class Invitation extends Model
 
     protected $fillable = [
         'landlord_id',
+        'inviter_type',
+        'inviter_id',
         'phone_number',
         'invited_role',
         'escort_external_id',
@@ -35,5 +38,10 @@ class Invitation extends Model
     public function landlord(): BelongsTo
     {
         return $this->belongsTo(Landlord::class);
+    }
+
+    public function inviter(): MorphTo
+    {
+        return $this->morphTo();
     }
 }

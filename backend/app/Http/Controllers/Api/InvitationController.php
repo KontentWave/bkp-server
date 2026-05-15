@@ -6,6 +6,7 @@ use App\Enums\InvitationStatus;
 use App\Http\Controllers\Controller;
 use App\Jobs\RetryEscortAdScrapeJob;
 use App\Jobs\SendSmsMessageJob;
+use App\Models\Escort;
 use App\Models\Invitation;
 use App\Models\Landlord;
 use App\Services\EscortAds\EscortAdScrapeException;
@@ -49,15 +50,15 @@ class InvitationController extends Controller
 
     private function storeInvitation(Request $request): JsonResponse
     {
-        $landlord = $request->user();
+        $actor = $request->user();
 
-        if (! $landlord instanceof Landlord) {
+        if (! $actor instanceof Landlord && ! $actor instanceof Escort) {
             return response()->json([
-                'message' => 'Only landlords can create invitations.',
+                'message' => 'Only authenticated landlords or escorts can create invitations.',
             ], JsonResponse::HTTP_FORBIDDEN);
         }
 
-        if (! $landlord->is_verified) {
+        if ($actor instanceof Landlord && ! $actor->is_verified) {
             return response()->json([
                 'message' => 'Landlord verification is required.',
             ], JsonResponse::HTTP_FORBIDDEN);
@@ -134,7 +135,9 @@ class InvitationController extends Controller
         $otpCode = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
 
         $invitation = Invitation::query()->create([
-            'landlord_id' => $landlord->id,
+            'landlord_id' => $actor instanceof Landlord ? $actor->id : null,
+            'inviter_type' => $actor::class,
+            'inviter_id' => $actor->id,
             'phone_number' => $targetPhoneNumber,
             'phone_scraped_at' => $phoneScrapedAt,
             'invited_role' => $validated['invited_role'],

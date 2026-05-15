@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\InvitationStatus;
 use App\Jobs\RetryEscortAdScrapeJob;
 use App\Jobs\SendSmsMessageJob;
+use App\Models\Escort;
 use App\Models\Invitation;
 use App\Models\Landlord;
 use App\Services\EscortAds\EscortAdScrapeException;
@@ -28,13 +29,20 @@ class InvitationApiTest extends TestCase
             'device_name' => 'ios-share-extension',
         ]);
 
+        $landlord = Landlord::query()
+            ->where('public_key', rtrim($publicKey))
+            ->first();
+
+        $this->assertNotNull($landlord);
+
         $response->assertCreated()
             ->assertJsonPath('data.actor_type', 'landlord')
-            ->assertJsonPath('data.actor_id', 1)
+            ->assertJsonPath('data.actor_id', $landlord->id)
             ->assertJsonPath('data.is_verified', true);
         $this->assertIsString($response->json('data.token'));
 
         $this->assertDatabaseHas('landlords', [
+            'id' => $landlord->id,
             'public_key' => rtrim($publicKey),
             'is_verified' => true,
         ]);
@@ -224,6 +232,48 @@ class InvitationApiTest extends TestCase
     }
 
     #[Test]
+    public function escort_can_create_a_landlord_invitation(): void
+    {
+        Queue::fake();
+
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+        $escort = Escort::query()->create([
+            'phone_number' => '+421900111224',
+            'public_key' => rtrim($publicKey),
+        ]);
+
+        $token = $escort->createToken('escort-device')->plainTextToken;
+        $payload = [
+            'phone_number' => '+421900111225',
+            'invited_role' => 'landlord',
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/invitations', $timestamp, $nonce);
+
+        $response = $this->withToken($token)->withHeaders([
+            'X-Hardware-Nonce' => $nonce,
+            'X-Hardware-Timestamp' => $timestamp,
+            'X-Hardware-Signature' => $signature,
+        ])->postJson('/api/invitations', $payload);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.invited_role', 'landlord')
+            ->assertJsonPath('data.phone_number', '+421900111225');
+
+        $this->assertDatabaseHas('invitations', [
+            'landlord_id' => null,
+            'inviter_type' => Escort::class,
+            'inviter_id' => $escort->id,
+            'phone_number' => '+421900111225',
+            'invited_role' => 'landlord',
+            'status' => InvitationStatus::Pending->value,
+        ]);
+
+        Queue::assertPushed(SendSmsMessageJob::class);
+    }
+
+    #[Test]
     public function escort_invitation_creation_rejects_when_submitted_phone_does_not_match_scraped_ad_phone(): void
     {
         Queue::fake();
@@ -372,13 +422,20 @@ class InvitationApiTest extends TestCase
             'public_key' => $publicKey,
         ]);
 
+        $escort = \App\Models\Escort::query()
+            ->where('phone_number', '+421900111222')
+            ->first();
+
+        $this->assertNotNull($escort);
+
         $response->assertOk()
             ->assertJsonPath('data.actor_type', 'escort')
-            ->assertJsonPath('data.actor_id', 1)
+            ->assertJsonPath('data.actor_id', $escort->id)
             ->assertJsonPath('data.phone_number', '+421900111222');
         $this->assertIsString($response->json('data.token'));
 
         $this->assertDatabaseHas('escorts', [
+            'id' => $escort->id,
             'external_id' => 29637,
             'phone_number' => '+421900111222',
             'public_key' => $publicKey,
@@ -554,15 +611,21 @@ class InvitationApiTest extends TestCase
             'public_key' => $publicKey,
         ]);
 
+        $landlord = Landlord::query()
+            ->where('phone_number', '+421900111223')
+            ->first();
+
+        $this->assertNotNull($landlord);
+
         $response->assertOk()
             ->assertJsonPath('data.actor_type', 'landlord')
-            ->assertJsonPath('data.actor_id', 2)
-            ->assertJsonPath('data.landlord_id', 2)
+            ->assertJsonPath('data.actor_id', $landlord->id)
+            ->assertJsonPath('data.landlord_id', $landlord->id)
             ->assertJsonPath('data.phone_number', '+421900111223');
         $this->assertIsString($response->json('data.token'));
 
         $this->assertDatabaseHas('landlords', [
-            'id' => 2,
+            'id' => $landlord->id,
             'phone_number' => '+421900111223',
             'public_key' => $publicKey,
             'is_verified' => true,
