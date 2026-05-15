@@ -374,7 +374,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.3: Field Test Readiness (UI Polish & Android Parity)
 
-- **Status:** Partially completed for production-like device validation on May 10, 2026. The UI clean-up slice, Android signer parity, Android runtime validation, deployed-backend reachability, and two-device landlord onboarding are now proven on physical devices. Preview APK distribution and the closed-pilot rollout gate remain open.
+- **Status:** Partially completed for live production validation on May 15, 2026. The UI clean-up slice, Android signer parity, Android runtime validation, deployed-backend reachability, Android and iOS escort onboarding, and cross-role invitation recovery are now proven on physical devices. Broader closed-pilot rollout and the long-term escort identity redesign remain open.
 - **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md).
 - **Action:** Strip all developer diagnostic noise from the UI to create a confident, non-technical user experience, and implement the pending Android platform layer to enable end-to-end MVP testing.
 - **Platform Target:** Field testing must support both product contracts (Landlord and Escort) on both iOS and Android. Step 4.3 is not only about Android escorts; it is the parity and rollout-readiness step for the two-role mobile product across both platforms.
@@ -423,6 +423,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 ### Step 4.3 Implementation Snapshot
 
 - **Main entry flow cleaned up:** The invitation, landlord access, escort OTP, and gallery entry screens now use product-facing copy instead of developer transport framing, and the most visible bypass-style diagnostics have been removed from the primary tester path.
+- **Slovak copy now covers the main tester path:** The onboarding, invitation, and gallery shell copy is now localized into Slovak for the current real-user audience instead of leaving the core flow in English.
 - **Cleaner gallery loading and empty states:** The flat gallery surface now shows explicit loading and empty states, better role-status messaging, and simpler landlord and escort action labels instead of debug-oriented feedback.
 - **Android signer parity implemented:** The Expo local module `bkp-secure-signer` now includes an Android Kotlin implementation backed by Android Keystore / KeyMint-style APIs and exposes the same signer contract used on iOS.
 - **Android onboarding and protected actions validated on a real device:** Manual device testing confirmed landlord bootstrap, escort OTP verification, invitation flow, gallery access, vote/report flows, and protected media actions all work on Android against the Laravel signature contract.
@@ -430,21 +431,26 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Android screenshot blocking implemented with a development guard:** `expo-screen-capture` now protects Android non-development builds, while development builds intentionally allow screenshots so UI work and device debugging remain practical.
 - **Physical-device install path proven:** The Android app was built, installed, and exercised successfully on a physical device, giving Step 4.3 a real parity checkpoint rather than emulator-only confidence.
 - **Tester-facing role separation is in place:** The entry flow now starts with a persistent `I am landlord` / `I am escort` mode selector, offers a reset path for device-role recovery, and keeps the shared invite flow inside the verified path for both roles.
+- **Product distribution remains unified by platform:** The current product decision is to keep one Android app and one iOS app with both roles inside each app. A landlord-versus-escort app split is intentionally deferred until real usage evidence justifies it.
 - **Field-test moderation semantics were simplified:** Landlord moderation input now accepts either a raw escort ad id or a pasted `amaterky.sk/<id>` URL, matching the field reality that an escorted person may be known publicly without already being registered in the app.
 - **Shared-hosting production backend is now live:** The Laravel deployment at `https://bkp-server.zafo-forum.sk` now serves the app successfully through the shared-hosting workaround, responds on `/up`, and returns JSON validation from `/api/verify`.
+- **Production queue processing is now repo-tracked operationally:** the shared-hosting queue drain path now depends on the committed `scripts/queue-work-cron.php` entrypoint and the corresponding Websupport cron job rather than an undocumented server-only script.
 - **Two-device landlord production rehearsal is complete:** Android and iOS each completed landlord OTP onboarding against the deployed backend, producing two separate verified landlord rows with distinct hardware public keys and device tokens.
-- **Live queued SMS invitation delivery is now validated operationally:** A real Android-to-iOS landlord invitation was created against production, the queued notification path was exercised, and delivery succeeded once the queue worker, Vonage credentials, sender config, and Laravel config cache were all corrected.
-- **The next pilot lane is concretely defined:** real escort testing should proceed with one trusted Android escort via hosted APK and one trusted iOS escort via TestFlight, each using a live ad-bound OTP flow rather than local bootstrap shortcuts.
+- **Live queued SMS invitation delivery is now validated operationally:** Real production invitations now succeed through the cron-driven queue path and the deployed SMS provider configuration once queue health and config cache are correct.
+- **Real escort onboarding is now validated on both platforms:** One trusted Android escort and one trusted iOS escort completed live ad-bound OTP onboarding against production, each using a public `amaterky.sk` ad with a visible phone number.
+- **Cross-role invitation growth is now live:** The invitation backend was generalized so verified escorts can create landlord invitations, the production migration was deployed successfully, and the live escort-to-landlord invitation flow completed successfully end to end.
+- **The current pilot lane is now broader than the initial escort-only rehearsal:** the product has already passed landlord-to-landlord, landlord-to-escort, escort onboarding, landlord reporting, escort reporting, and escort-to-landlord invitation validation on production.
 
 ### Step 4.3 Remaining Scope
 
-- **Preview APK distribution is still pending:** The roadmap target for a dedicated sideloadable preview APK has not been completed yet; current validation used development and debug-style Android builds on a physical device.
-- **Closed-pilot operations are still pending:** Tester invitation governance, revocation flow, incident handling, monitoring, and the first rehearsal against pilot infrastructure still need their own rollout pass.
+- **Closed-pilot operations are still pending:** Tester invitation governance, revocation flow, incident handling, monitoring, and a formal pilot runbook still need their own rollout pass even though the core production flows are now proven.
 - **UI polish is intentionally not finished:** The app is now functionally coherent and much less developer-facing, but spacing, visual rhythm, and section consistency are deferred to a later polish slice instead of blocking the Android parity checkpoint.
 - **Production operations are not yet automated:** The current shared-hosting deployment still relies on explicit operational care for queue worker uptime and configuration-cache refreshes when SMS-provider settings change.
+- **Production SMS configuration still needs one manual guardrail:** `SMSTOOLS_LOCAL_OVERRIDE_PHONE` must stay empty outside local development so production OTP delivery is not silently diverted.
 - **Escort identity redesign is now a mandatory follow-up expansion:** The current escort contract is sufficient for field testing, but it is no longer considered a durable production identity model because escorts can rotate ad IDs and phone numbers over time.
 - **Landlord report-visibility hardening is still future work:** The current `publish at least one flat first` gate is intentionally light for pilot use. A later anti-misuse hardening pass should require stronger landlord credibility signals, such as one flat confirmed by at least three registered escorts, before broader escort-report visibility is expanded.
 - **Current landlord report visibility is intentionally broad after the first gate:** The present field-test contract exposes globally shared landlord-side escort reports immediately after a landlord publishes at least one flat. Any stricter threshold belongs to a later hardening pass rather than the current pilot contract.
+- **A separate landlord-versus-escort app split is explicitly deferred:** revisit that only if real usage shows persistent role confusion, materially different acquisition channels, security-boundary needs, or release velocity problems that the current unified apps cannot absorb.
 
 ### Mandatory Post-Pilot Expansion: Stable Escort Identity With Alias History
 

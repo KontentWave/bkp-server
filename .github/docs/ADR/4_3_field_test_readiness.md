@@ -53,6 +53,7 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - This tester-facing device mode must remain separate from the verified secure session metadata. The stored actor type still controls authorization, while the saved device mode controls the onboarding and navigation shape shown on the device.
 - OTP verification should reject a backend actor type that does not match the selected device mode rather than silently switching the device into the opposite tester path.
 - The invitation flow should now be treated as a shared verified action available from both roles after authentication instead of as a landlord-only developer utility.
+- The product should remain one mobile app per platform for now. A landlord-versus-escort app split is deferred until real usage demonstrates role confusion, divergent acquisition, stronger isolation requirements, or release-management pressure that the unified apps cannot absorb.
 - Landlord and escort moderation visibility should remain asymmetric by policy:
   - landlords may see aggregate landlord-report counts and reasons on flats they own,
   - escorts may see only their own vote state and their own landlord-report state,
@@ -110,7 +111,7 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Open the escort's `amaterky.sk` ad and confirm the page is active and the phone number is publicly visible.
 - Confirm production operations are ready before sending the invite:
   - queue worker running
-  - Vonage credentials present
+  - SMS-provider credentials present
   - sender configuration correct
   - Laravel config cache refreshed after any `.env` change
 - Send the invitation from a landlord device controlled by the team.
@@ -143,7 +144,7 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 ### Positive
 
 - Live testing now has an explicit readiness gate instead of an informal judgment call.
-- The roadmap distinguishes product MVP completion from rollout readiness.
+- The project documentation now distinguishes product MVP completion from rollout readiness without relying on a separate parallel roadmap file.
 - The first Step 4.3 implementation slice is clear: remove developer-facing noise from the mobile app before expanding scope.
 - Testers now get a clearer role-separated first-run experience instead of inheriting internal mixed-role assumptions from development.
 - The moderation model is clearer and more defensible because field-test users can report against real-world public escort identifiers without the app pretending every escort already exists as an internal record.
@@ -153,7 +154,8 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Live deployment is deliberately slowed down in exchange for better operational control.
 - Android work becomes a blocking rollout dependency rather than a later parity follow-up.
 - Some internal convenience surfaces may need to move behind development-only tooling instead of staying visible in the main app.
-- OTP delivery now has an explicit provider-contingency risk: if Vonage account or deliverability issues persist, the rollout plan should allow a managed verification-provider swap such as Twilio Verify instead of treating the current SMS vendor as fixed.
+- OTP delivery now has an explicit provider-contingency risk: if the current SMS provider account or deliverability degrades, the rollout plan should allow a managed provider swap instead of treating the current vendor as fixed.
+- Keeping both roles in one app reduces release and QA overhead in the current stage, but it also means role-specific UX clarity must keep improving so the unified surface does not become the next rollout bottleneck.
 - The tester-facing device mode introduces one more persisted client state that must be recoverable through an explicit reset path.
 - Shared invitation capability across both roles increases product flexibility, but it also means pilot operations must be clear about who is allowed to invite whom during the first rollout.
 - Deferring the escort identity redesign keeps the current pilot scope stable, but it also means the first live cycle will still rely on a simplified escort model that is weaker for long-term repeat-incident tracking.
@@ -166,6 +168,7 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - The main entry path now includes a persistent first-run device-role selector for `landlord` versus `escort`, plus an explicit reset path for recovering the device into the other tester mode.
 - OTP verification now enforces that the verified backend actor type matches the selected device mode before the secure session is stored locally.
 - The shared in-app invitation flow now works for both verified landlords and verified escorts and carries role-specific invitation intent through the signed backend payload.
+- The backend invitation ownership model is now generalized beyond landlord-only creation: verified escorts can create landlord invitations, the production migration for generic invitation inviters has been applied successfully, and the live escort-to-landlord recovery path is now proven on production.
 - Phone-number validation was tightened on both mobile and backend so malformed numbers are rejected before the team mistakes a bad payload for an SMS-provider problem.
 - Live field-testing preparation now assumes seeded or manual verification listings from earlier steps are cleaned from shared environments, because those records read like product content to non-technical testers.
 - The Android local signer module is now implemented in Kotlin and registered through the Expo local module boundary, matching the shared TypeScript signer contract used on iOS.
@@ -178,8 +181,9 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Landlord escort moderation now accepts either a raw public ad id or a pasted `amaterky.sk/<id>` URL, and the backend persists that external escort identifier even when no internal escort record exists yet.
 - The production Laravel backend is now deployed and reachable at `https://bkp-server.zafo-forum.sk`, including live API validation through `/up` and `/api/verify` against the shared-hosting environment.
 - A real two-device landlord rehearsal now succeeded in production: one Android landlord and one iOS landlord completed OTP onboarding, persisted as separate verified landlord rows, and kept distinct hardware public keys and Sanctum tokens.
-- Live landlord-to-landlord invitation flow is now proven against the production queue and Vonage path after correcting production credentials and refreshing Laravel config cache.
-- The next live expansion path is now explicit: onboard one trusted Android escort via hosted APK and one trusted iOS escort via TestFlight, each backed by a real active `amaterky.sk` ad with a publicly visible phone number.
+- Live invitation delivery is now proven against the production queue and deployed SMS-provider path after correcting credentials and refreshing Laravel config cache.
+- Real escort onboarding is now proven on both Android and iOS against production, each backed by a live `amaterky.sk` ad with a publicly visible phone number.
+- The live escort-to-landlord invitation path is now also proven on production after deploying the generalized invitation-inviter migration.
 
 ## Current Validation State
 
@@ -193,13 +197,16 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - One production-like rehearsal is now also satisfied for the landlord slice:
   - the deployed backend served live HTTPS traffic,
   - Android and iOS each onboarded as independent production landlords,
-  - live landlord invitation queued and dispatched through the production worker and Vonage configuration once credentials and cached config were corrected.
-- Validation items 4 and 5 remain open:
-  - a dedicated sideloadable preview APK has not yet been produced as the recorded rollout artifact,
-  - the closed-pilot rehearsal and operational sign-off are still future rollout work.
+  - live landlord invitation queued and dispatched through the production worker and current SMS-provider configuration once credentials and cached config were corrected.
+- One live production-like escort slice is now also satisfied:
+  - Android and iOS escort onboarding each completed against a live public ad,
+  - escort-side landlord reporting works while preserving anonymity on the landlord side,
+  - escort-to-landlord invitation and landlord recovery on reinstall are now proven on production.
+- Validation item 7 is now materially satisfied through real Android sideload distribution and installation.
+- The remaining open rollout gate is the formal closed-pilot rehearsal and operational sign-off rather than basic distribution feasibility.
 - One additional mandatory expansion is now explicitly parked after the first live checkpoint: redesign escort identity so historical ad IDs and phone numbers attach to one stable internal escort row instead of behaving like a single mutable public identifier.
 - One additional authentication expansion is also now explicit: move invitation and activation from inviter-entered phone numbers to scraper-backed ad validation, with the current active ad phone treated as the activation credential.
-- Queue and provider operations are now an explicit live-rollout dependency: production invitation delivery requires a running queue worker plus valid Vonage credentials and sender configuration, and Laravel config cache must be refreshed when those settings change.
+- Queue and provider operations are now an explicit live-rollout dependency: production invitation delivery requires a running queue worker plus valid SMS-provider credentials and sender configuration, and Laravel config cache must be refreshed when those settings change.
 
 ## Validation
 
