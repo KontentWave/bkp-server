@@ -145,7 +145,7 @@ class AmaterkyEscortAdScraper implements EscortAdScraper
         $telHrefMatches = [];
         preg_match_all('/href\s*=\s*["\']tel:([^"\']+)["\']/i', $html, $telHrefMatches);
 
-        $normalizedFromTelLinks = collect($telHrefMatches[1] ?? [])
+        $normalizedFromTelLinks = collect($telHrefMatches[1])
             ->map(fn (string $candidate): ?string => $this->normalizePhoneNumber($candidate))
             ->filter()
             ->unique()
@@ -164,7 +164,7 @@ class AmaterkyEscortAdScraper implements EscortAdScraper
 
         preg_match_all('/(?:\+421|00421|0)\s*\d(?:[\s-]*\d){8,11}/', $plainText, $matches);
 
-        $normalized = collect($matches[0] ?? [])
+        $normalized = collect($matches[0])
             ->map(fn (string $candidate): ?string => $this->normalizePhoneNumber($candidate))
             ->filter()
             ->unique()

@@ -61,6 +61,30 @@
         "format": [
             "@php ./vendor/bin/pint"
         ],
+        "lint": [
+            "@composer analyse",
+            "@php ./vendor/bin/pint --test"
+        ],
+        "insights": [
+            "@php -r \"if (! file_exists('vendor/bin/phpinsights')) { fwrite(STDOUT, 'phpinsights not installed, skipping.'.PHP_EOL); exit(0); } passthru('./vendor/bin/phpinsights --no-interaction', $exit); exit($exit);\""
+        ],
+        "refactor:check": [
+            "@php -r \"if (! file_exists('vendor/bin/rector')) { fwrite(STDOUT, 'rector not installed, skipping.'.PHP_EOL); exit(0); } passthru('./vendor/bin/rector process --dry-run', $exit); exit($exit);\""
+        ],
+        "qa:stage": [
+            "@composer analyse",
+            "@php scripts/qa-stage.php"
+        ],
+        "qa:commit": [
+            "@composer qa:stage",
+            "@php artisan test tests/Feature/InvitationApiTest.php tests/Feature/FlatGalleryApiTest.php tests/Feature/HardwareSignatureMiddlewareTest.php"
+        ],
+        "qa:push": [
+            "@composer qa:commit",
+            "@composer insights",
+            "@composer refactor:check",
+            "@php artisan test tests/Feature"
+        ],
         "post-autoload-dump": [
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
