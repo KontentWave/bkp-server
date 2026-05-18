@@ -568,6 +568,113 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function gallery_votes_count_only_includes_favorite_votes(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111334');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Favorite Count Flat',
+            'description' => 'Only true favorites should be counted.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '3004'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $otherEscortA = Escort::query()->create([
+            'external_id' => 40001,
+            'phone_number' => '+421900111701',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+        $otherEscortB = Escort::query()->create([
+            'external_id' => 40002,
+            'phone_number' => '+421900111702',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+
+        $flat->votes()->create([
+            'escort_id' => $escort->id,
+            'is_favorite' => true,
+        ]);
+        $flat->votes()->create([
+            'escort_id' => $otherEscortA->id,
+            'is_favorite' => true,
+        ]);
+        $flat->votes()->create([
+            'escort_id' => $otherEscortB->id,
+            'is_favorite' => false,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('data.0.votes_count', 2);
+    }
+
+    #[Test]
+    public function favorite_votes_cannot_exceed_ten_per_flat(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111335');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Capped Favorite Flat',
+            'description' => 'The eleventh favorite should be rejected.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '3005'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        for ($index = 0; $index < 10; $index++) {
+            $flat->votes()->create([
+                'escort_id' => Escort::query()->create([
+                    'external_id' => 50000 + $index,
+                    'phone_number' => sprintf('+421900112%03d', $index),
+                    'public_key' => $this->generateEcKeyPair()[1],
+                ])->id,
+                'is_favorite' => true,
+            ]);
+        }
+
+        $payload = ['is_favorite' => true];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/vote', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/vote', $payload);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('message', 'This flat already reached the maximum of 10 likes.');
+        $this->assertSame(10, $flat->fresh()->votes()->where('is_favorite', true)->count());
+    }
+
+    #[Test]
     public function multipart_upload_signature_contract(): void
     {
         Storage::fake('public');
@@ -812,14 +919,14 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
-    public function escort_can_edit_existing_landlord_report_reason(): void
+    public function escort_can_report_the_same_landlord_for_multiple_distinct_reasons(): void
     {
         [$privateKey, $escort, $token] = $this->createEscortSession('+421900111448');
         $landlord = Landlord::query()->create(['is_verified' => true]);
         $flat = Flat::query()->create([
             'landlord_id' => $landlord->id,
-            'title' => 'Editable Escort Report Flat',
-            'description' => 'Escort report should update in place.',
+            'title' => 'Multi Reason Escort Report Flat',
+            'description' => 'Distinct escort landlord reports should coexist.',
         ]);
 
         Invitation::query()->create([
@@ -850,13 +957,64 @@ class FlatGalleryApiTest extends TestCase
             ])
             ->postJson('/api/flats/'.$flat->id.'/report-landlord', $payload);
 
-        $response->assertOk()->assertJsonPath('data.reason_code', EscortReportReason::DidNotKeepAgreement->value);
+        $response->assertCreated()->assertJsonPath('data.reason_code', EscortReportReason::DidNotKeepAgreement->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::Pimp->value,
+        ]);
         $this->assertDatabaseHas('flat_reports', [
             'flat_id' => $flat->id,
             'reporter_escort_id' => $escort->id,
             'reported_landlord_id' => $landlord->id,
             'reason_code' => EscortReportReason::DidNotKeepAgreement->value,
         ]);
+        $this->assertDatabaseCount('flat_reports', 2);
+    }
+
+    #[Test]
+    public function escort_cannot_report_the_same_landlord_for_the_same_reason_twice(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111449');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Duplicate Escort Report Flat',
+            'description' => 'Duplicate escort landlord reports should be rejected.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4499'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::Harassing->value,
+        ]);
+
+        $payload = ['reason_code' => EscortReportReason::Harassing->value];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-landlord', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-landlord', $payload);
+
+        $response
+            ->assertConflict()
+            ->assertJsonPath('message', 'You already reported this landlord for harassing.');
         $this->assertDatabaseCount('flat_reports', 1);
     }
 
@@ -903,6 +1061,67 @@ class FlatGalleryApiTest extends TestCase
             ->assertJsonPath('data.0.landlord_reports_count', 1)
             ->assertJsonPath('data.0.landlord_report_reasons.0', EscortReportReason::DidNotKeepAgreement->value)
             ->assertJsonPath('data.0.my_landlord_report_reason', EscortReportReason::DidNotKeepAgreement->value);
+    }
+
+    #[Test]
+    public function escort_flat_gallery_preserves_all_landlord_report_rows(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111461');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Repeated Report Flat',
+            'description' => 'Gallery should expose every landlord report row.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4610'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $otherEscort = Escort::query()->create([
+            'external_id' => 29640,
+            'phone_number' => '+421900111462',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::DidNotKeepAgreement->value,
+            'updated_at' => now()->subMinute(),
+        ]);
+
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $otherEscort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::DidNotKeepAgreement->value,
+            'updated_at' => now(),
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', $flat->id)
+            ->assertJsonPath('data.0.landlord_reports_count', 2)
+            ->assertJsonCount(2, 'data.0.landlord_report_reasons')
+            ->assertJsonPath('data.0.landlord_report_reasons.0', EscortReportReason::DidNotKeepAgreement->value)
+            ->assertJsonPath('data.0.landlord_report_reasons.1', EscortReportReason::DidNotKeepAgreement->value);
     }
 
     #[Test]

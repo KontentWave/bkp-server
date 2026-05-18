@@ -35,7 +35,9 @@ class FlatGalleryController extends Controller
             $flats = Flat::query()
                 ->where('landlord_id', $actor->id)
                 ->with(['photos', 'reports'])
-                ->withCount('votes')
+                ->withCount([
+                    'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
+                ])
                 ->orderByDesc('id')
                 ->paginate($perPage)
                 ->withQueryString();
@@ -71,7 +73,9 @@ class FlatGalleryController extends Controller
 
         $flats = $this->escortAccessibleFlatsQuery($actor)
             ->with(['photos', 'reports'])
-            ->withCount('votes')
+            ->withCount([
+                'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
+            ])
             ->orderByDesc('id')
             ->paginate($perPage)
             ->withQueryString();
@@ -168,7 +172,9 @@ class FlatGalleryController extends Controller
         ]);
 
         return FlatResource::make(
-            $flat->load(['photos'])->loadCount('votes')->setAttribute('my_vote', null)
+            $flat->load(['photos'])->loadCount([
+                'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
+            ])->setAttribute('my_vote', null)
         )->response()->setStatusCode(JsonResponse::HTTP_CREATED);
     }
 
@@ -276,9 +282,26 @@ class FlatGalleryController extends Controller
             'is_favorite' => ['sometimes', 'boolean'],
         ]);
 
+        $isFavorite = $validated['is_favorite'] ?? true;
+        $existingVote = $flat->votes()
+            ->where('escort_id', $escort->id)
+            ->first();
+
+        if ($isFavorite && (! $existingVote?->is_favorite)) {
+            $favoriteVotesCount = $flat->votes()
+                ->where('is_favorite', true)
+                ->count();
+
+            if ($favoriteVotesCount >= 10) {
+                return response()->json([
+                    'message' => 'This flat already reached the maximum of 10 likes.',
+                ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+            }
+        }
+
         $vote = $flat->votes()->updateOrCreate(
             ['escort_id' => $escort->id],
-            ['is_favorite' => $validated['is_favorite'] ?? true],
+            ['is_favorite' => $isFavorite],
         );
 
         return response()->json([
@@ -310,11 +333,26 @@ class FlatGalleryController extends Controller
             'reason_code' => ['required', 'string', 'in:'.implode(',', array_column(EscortReportReason::cases(), 'value'))],
         ]);
 
-        $report = FlatReport::query()->updateOrCreate([
+        $existingReport = FlatReport::query()->where([
             'flat_id' => $flat->id,
             'reporter_escort_id' => $escort->id,
             'reported_landlord_id' => $flat->landlord_id,
-        ], [
+            'reason_code' => $validated['reason_code'],
+        ])->first();
+
+        if ($existingReport) {
+            return response()->json([
+                'message' => sprintf(
+                    'You already reported this landlord for %s.',
+                    str_replace('_', ' ', $validated['reason_code'])
+                ),
+            ], JsonResponse::HTTP_CONFLICT);
+        }
+
+        $report = FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $flat->landlord_id,
             'reason_code' => $validated['reason_code'],
         ]);
 
@@ -326,7 +364,7 @@ class FlatGalleryController extends Controller
                 'reported_landlord_id' => $report->reported_landlord_id,
                 'reason_code' => $report->reason_code,
             ],
-        ], $report->wasRecentlyCreated ? JsonResponse::HTTP_CREATED : JsonResponse::HTTP_OK);
+        ], JsonResponse::HTTP_CREATED);
     }
 
     public function reportEscort(Request $request, Flat $flat): JsonResponse
@@ -480,16 +518,14 @@ class FlatGalleryController extends Controller
     {
         $reasonCodes = $flat->reports
             ->where('reported_landlord_id', $flat->landlord_id)
+            ->sortByDesc('updated_at')
             ->pluck('reason_code')
             ->filter()
-            ->unique()
             ->values()
             ->all();
 
         return [
-            'count' => count($reasonCodes) > 0
-                ? $flat->reports->where('reported_landlord_id', $flat->landlord_id)->count()
-                : 0,
+            'count' => count($reasonCodes),
             'reason_codes' => $reasonCodes,
         ];
     }
