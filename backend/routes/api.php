@@ -14,12 +14,12 @@ Route::post('/verify', [VerificationController::class, 'store']);
 
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/admin/logs', [AdminLogController::class, 'index']);
+    Route::get('/municipalities', [FlatGalleryController::class, 'municipalities']);
     Route::post('/browser/invitations', [InvitationController::class, 'storeFromBrowser']);
 });
 
 Route::middleware(['auth:sanctum', 'hardware.signature'])->group(function (): void {
     Route::post('/invitations', [InvitationController::class, 'store']);
-    Route::get('/municipalities', [FlatGalleryController::class, 'municipalities']);
     Route::get('/flats', [FlatGalleryController::class, 'index']);
     Route::get('/reported-escorts-summary', [FlatGalleryController::class, 'reportedEscortSummary']);
     Route::post('/flats', [FlatGalleryController::class, 'store']);
