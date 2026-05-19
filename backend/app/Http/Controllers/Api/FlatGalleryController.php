@@ -151,15 +151,7 @@ class FlatGalleryController extends Controller
             ], JsonResponse::HTTP_FORBIDDEN);
         }
 
-        $validated = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['required', 'string'],
-            'contact.phone' => ['required', 'string', 'max:32'],
-            'contact.email' => ['required', 'email:rfc', 'max:255'],
-            'contact.whatsapp_url' => ['nullable', 'string', 'max:2048'],
-            'contact.telegram_url' => ['nullable', 'string', 'max:2048'],
-            'contact.viber_url' => ['nullable', 'string', 'max:2048'],
-        ]);
+        $validated = $this->validateFlatPayload($request);
 
         $flat = $landlord->flats()->create([
             'title' => $validated['title'],
@@ -175,7 +167,48 @@ class FlatGalleryController extends Controller
             $flat->load(['photos'])->loadCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])->setAttribute('my_vote', null)
+                ->setAttribute('is_owned_by_viewer', true)
+                ->setAttribute('landlord_reports_count', 0)
+                ->setAttribute('landlord_report_reasons', [])
         )->response()->setStatusCode(JsonResponse::HTTP_CREATED);
+    }
+
+    public function update(Request $request, Flat $flat): JsonResponse
+    {
+        $landlord = $request->user();
+
+        if (! $landlord instanceof Landlord) {
+            return response()->json([
+                'message' => 'Only landlords can update flats.',
+            ], JsonResponse::HTTP_FORBIDDEN);
+        }
+
+        if (! $landlord->is_verified || $flat->landlord_id !== $landlord->id) {
+            return response()->json([
+                'message' => 'You do not own this flat.',
+            ], JsonResponse::HTTP_FORBIDDEN);
+        }
+
+        $validated = $this->validateFlatPayload($request);
+
+        $flat->update([
+            'title' => $validated['title'],
+            'description' => $validated['description'] ?? null,
+            'contact_phone' => data_get($validated, 'contact.phone'),
+            'contact_email' => data_get($validated, 'contact.email'),
+            'whatsapp_url' => data_get($validated, 'contact.whatsapp_url'),
+            'telegram_url' => data_get($validated, 'contact.telegram_url'),
+            'viber_url' => data_get($validated, 'contact.viber_url'),
+        ]);
+
+        return FlatResource::make(
+            $flat->fresh(['photos'])?->loadCount([
+                'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
+            ])?->setAttribute('my_vote', null)
+                ->setAttribute('is_owned_by_viewer', true)
+                ->setAttribute('landlord_reports_count', $this->buildFlatLandlordReportSummary($flat)['count'])
+                ->setAttribute('landlord_report_reasons', $this->buildFlatLandlordReportSummary($flat)['reason_codes'])
+        )->response();
     }
 
     public function storePhoto(Request $request, Flat $flat): JsonResponse
@@ -215,6 +248,22 @@ class FlatGalleryController extends Controller
         return FlatPhotoResource::make($photo)
             ->response()
             ->setStatusCode(JsonResponse::HTTP_CREATED);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validateFlatPayload(Request $request): array
+    {
+        return $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+            'description' => ['required', 'string'],
+            'contact.phone' => ['required', 'string', 'max:32'],
+            'contact.email' => ['required', 'email:rfc', 'max:255'],
+            'contact.whatsapp_url' => ['nullable', 'string', 'max:2048'],
+            'contact.telegram_url' => ['nullable', 'string', 'max:2048'],
+            'contact.viber_url' => ['nullable', 'string', 'max:2048'],
+        ]);
     }
 
     public function destroyPhoto(Request $request, FlatPhoto $photo): JsonResponse

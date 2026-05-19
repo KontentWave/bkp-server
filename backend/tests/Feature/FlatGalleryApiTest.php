@@ -47,6 +47,64 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function landlord_can_update_owned_flat_details(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Flat 2',
+            'description' => '1 Room flat',
+            'contact_phone' => '+421917047260',
+            'contact_email' => 'admin@zafo-forum.sk',
+        ]);
+
+        $payload = [
+            'title' => 'Flat 2 updated',
+            'description' => '2 Room flat with balcony',
+            'contact' => [
+                'phone' => '+421900123456',
+                'email' => 'owner-updated@example.test',
+                'whatsapp_url' => 'https://wa.me/421900123456',
+                'telegram_url' => 'https://t.me/updated_owner',
+                'viber_url' => 'viber://chat?number=%2B421900123456',
+            ],
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'PATCH', '/api/flats/'.$flat->id, $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->patchJson('/api/flats/'.$flat->id, $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('data.id', $flat->id)
+            ->assertJsonPath('data.title', 'Flat 2 updated')
+            ->assertJsonPath('data.description', '2 Room flat with balcony')
+            ->assertJsonPath('data.contact.phone', '+421900123456')
+            ->assertJsonPath('data.contact.email', 'owner-updated@example.test')
+            ->assertJsonPath('data.contact.whatsapp_url', 'https://wa.me/421900123456')
+            ->assertJsonPath('data.contact.telegram_url', 'https://t.me/updated_owner')
+            ->assertJsonPath('data.contact.viber_url', 'viber://chat?number=%2B421900123456')
+            ->assertJsonPath('data.is_owned_by_viewer', true);
+
+        $this->assertDatabaseHas('flats', [
+            'id' => $flat->id,
+            'title' => 'Flat 2 updated',
+            'description' => '2 Room flat with balcony',
+            'contact_phone' => '+421900123456',
+            'contact_email' => 'owner-updated@example.test',
+            'whatsapp_url' => 'https://wa.me/421900123456',
+            'telegram_url' => 'https://t.me/updated_owner',
+            'viber_url' => 'viber://chat?number=%2B421900123456',
+        ]);
+    }
+
+    #[Test]
     public function flat_gallery_scope_requires_approved_access(): void
     {
         [$privateKey, $escort, $token] = $this->createEscortSession('+421900111222');
