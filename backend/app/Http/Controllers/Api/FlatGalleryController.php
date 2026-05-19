@@ -33,7 +33,6 @@ class FlatGalleryController extends Controller
         if ($actor instanceof Landlord) {
             $reportedEscortSummaryAccess = $this->buildReportedEscortSummaryAccess($actor);
             $flats = Flat::query()
-                ->where('landlord_id', $actor->id)
                 ->with(['photos', 'reports'])
                 ->withCount([
                     'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
@@ -45,10 +44,11 @@ class FlatGalleryController extends Controller
             /** @var Collection<int, Flat> $flatCollection */
             $flatCollection = $flats->getCollection();
 
-            $flatCollection->transform(function (Flat $flat): Flat {
+                $flatCollection->transform(function (Flat $flat) use ($actor): Flat {
                 $landlordReportSummary = $this->buildFlatLandlordReportSummary($flat);
 
                 return $flat
+                    ->setAttribute('is_owned_by_viewer', $flat->landlord_id === $actor->id)
                     ->setAttribute('my_vote', null)
                     ->setAttribute('landlord_reports_count', $landlordReportSummary['count'])
                     ->setAttribute('landlord_report_reasons', $landlordReportSummary['reason_codes']);

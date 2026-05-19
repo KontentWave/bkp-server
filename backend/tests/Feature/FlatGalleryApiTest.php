@@ -101,7 +101,7 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
-    public function landlord_listing_only_returns_owned_flats_and_hides_storage_internals(): void
+    public function landlord_listing_returns_owned_and_other_flats_and_hides_storage_internals(): void
     {
         Storage::fake('public');
 
@@ -123,10 +123,10 @@ class FlatGalleryApiTest extends TestCase
             'sort_order' => 1,
         ]);
 
-        Flat::query()->create([
+        $otherFlat = Flat::query()->create([
             'landlord_id' => $otherLandlord->id,
             'title' => 'Other Flat',
-            'description' => 'Must stay hidden.',
+            'description' => 'Should also be visible.',
         ]);
 
         $timestamp = (string) now()->timestamp;
@@ -142,13 +142,16 @@ class FlatGalleryApiTest extends TestCase
         ]);
 
         $response->assertOk();
-        $response->assertJsonCount(1, 'data');
-        $response->assertJsonPath('data.0.id', $ownedFlat->id);
-        $response->assertJsonPath('data.0.photos.0.original_filename', 'owned-flat.jpg');
-        $response->assertJsonPath('data.0.photos.0.content_url', url('/api/photos/'.$ownedFlat->photos()->firstOrFail()->id.'/content'));
-        $response->assertJsonMissing(['title' => 'Other Flat']);
-        $response->assertJsonMissingPath('data.0.photos.0.storage_disk');
-        $response->assertJsonMissingPath('data.0.photos.0.storage_path');
+        $response->assertJsonCount(2, 'data');
+        $response->assertJsonPath('data.0.id', $otherFlat->id);
+        $response->assertJsonPath('data.1.id', $ownedFlat->id);
+        $response->assertJsonPath('data.0.is_owned_by_viewer', false);
+        $response->assertJsonPath('data.1.is_owned_by_viewer', true);
+        $response->assertJsonPath('data.1.photos.0.original_filename', 'owned-flat.jpg');
+        $response->assertJsonPath('data.1.photos.0.content_url', url('/api/photos/'.$ownedFlat->photos()->firstOrFail()->id.'/content'));
+        $response->assertJsonFragment(['title' => 'Other Flat']);
+        $response->assertJsonMissingPath('data.1.photos.0.storage_disk');
+        $response->assertJsonMissingPath('data.1.photos.0.storage_path');
     }
 
     #[Test]
@@ -270,7 +273,7 @@ class FlatGalleryApiTest extends TestCase
         $data = $response->json();
 
         $this->assertSame(
-            ['id', 'landlord_id', 'title', 'description', 'contact', 'photos', 'votes_count', 'my_vote', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reason', 'created_at', 'updated_at'],
+            ['id', 'landlord_id', 'title', 'description', 'contact', 'photos', 'votes_count', 'my_vote', 'is_owned_by_viewer', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reason', 'created_at', 'updated_at'],
             array_keys($data['data'][0]),
         );
         $this->assertSame(
