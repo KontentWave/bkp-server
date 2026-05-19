@@ -19,6 +19,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
 Route::middleware(['auth:sanctum', 'hardware.signature'])->group(function (): void {
     Route::post('/invitations', [InvitationController::class, 'store']);
+    Route::get('/municipalities', [FlatGalleryController::class, 'municipalities']);
     Route::get('/flats', [FlatGalleryController::class, 'index']);
     Route::get('/reported-escorts-summary', [FlatGalleryController::class, 'reportedEscortSummary']);
     Route::post('/flats', [FlatGalleryController::class, 'store']);

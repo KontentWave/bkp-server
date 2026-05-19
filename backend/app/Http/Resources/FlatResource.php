@@ -25,8 +25,12 @@ class FlatResource extends JsonResource
         return [
             'id' => $this->id,
             'landlord_id' => $this->landlord_id,
+            'municipality_id' => $this->municipality_id,
             'title' => $this->title,
             'description' => $this->description,
+            'city' => $this->municipality?->name,
+            'district' => $this->municipality?->district,
+            'region' => $this->municipality?->region,
             'contact' => [
                 'phone' => $this->contact_phone,
                 'email' => $this->contact_email,

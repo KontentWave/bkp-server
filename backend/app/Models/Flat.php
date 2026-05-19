@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property int $id
  * @property int $landlord_id
+ * @property int|null $municipality_id
  * @property string $title
  * @property string|null $description
  * @property string|null $contact_phone
@@ -18,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $whatsapp_url
  * @property string|null $telegram_url
  * @property string|null $viber_url
+ * @property \App\Models\Municipality|null $municipality
  * @property int|null $votes_count
  * @property bool|null $my_vote
  * @property int|null $landlord_reports_count
@@ -32,6 +34,7 @@ class Flat extends Model
 
     protected $fillable = [
         'landlord_id',
+        'municipality_id',
         'title',
         'description',
         'contact_phone',
@@ -47,6 +50,14 @@ class Flat extends Model
     public function landlord(): BelongsTo
     {
         return $this->belongsTo(Landlord::class);
+    }
+
+    /**
+     * @return BelongsTo<\App\Models\Municipality, $this>
+     */
+    public function municipality(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Municipality::class);
     }
 
     /**

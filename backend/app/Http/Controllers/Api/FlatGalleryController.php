@@ -22,6 +22,37 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class FlatGalleryController extends Controller
 {
+    public function municipalities(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'query' => ['nullable', 'string', 'max:120'],
+            'per_page' => ['sometimes', 'integer', 'min:1', 'max:30'],
+        ]);
+        $query = trim((string) ($validated['query'] ?? ''));
+        $perPage = (int) ($validated['per_page'] ?? 20);
+
+        if ($query === '') {
+            return response()->json(['data' => []]);
+        }
+
+        $rows = \App\Models\Municipality::query()
+            ->where('name', 'like', $query.'%')
+            ->orWhere('district', 'like', $query.'%')
+            ->orderBy('name')
+            ->orderBy('district')
+            ->limit($perPage)
+            ->get(['id', 'name', 'district', 'region']);
+
+        return response()->json([
+            'data' => $rows->map(fn (\App\Models\Municipality $municipality): array => [
+                'id' => $municipality->id,
+                'name' => $municipality->name,
+                'district' => $municipality->district,
+                'region' => $municipality->region,
+            ])->all(),
+        ]);
+    }
+
     public function index(Request $request): JsonResponse
     {
         $actor = $request->user();
@@ -33,7 +64,7 @@ class FlatGalleryController extends Controller
         if ($actor instanceof Landlord) {
             $reportedEscortSummaryAccess = $this->buildReportedEscortSummaryAccess($actor);
             $flats = Flat::query()
-                ->with(['photos', 'reports'])
+                ->with(['photos', 'reports', 'municipality'])
                 ->withCount([
                     'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
                 ])
@@ -72,7 +103,7 @@ class FlatGalleryController extends Controller
         }
 
         $flats = $this->escortAccessibleFlatsQuery($actor)
-            ->with(['photos', 'reports'])
+            ->with(['photos', 'reports', 'municipality'])
             ->withCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])
@@ -156,6 +187,7 @@ class FlatGalleryController extends Controller
         $flat = $landlord->flats()->create([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
+            'municipality_id' => data_get($validated, 'municipality_id'),
             'contact_phone' => data_get($validated, 'contact.phone'),
             'contact_email' => data_get($validated, 'contact.email'),
             'whatsapp_url' => data_get($validated, 'contact.whatsapp_url'),
@@ -164,7 +196,7 @@ class FlatGalleryController extends Controller
         ]);
 
         return FlatResource::make(
-            $flat->load(['photos'])->loadCount([
+            $flat->load(['photos', 'municipality'])->loadCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])->setAttribute('my_vote', null)
                 ->setAttribute('is_owned_by_viewer', true)
@@ -194,6 +226,7 @@ class FlatGalleryController extends Controller
         $flat->update([
             'title' => $validated['title'],
             'description' => $validated['description'] ?? null,
+            'municipality_id' => data_get($validated, 'municipality_id'),
             'contact_phone' => data_get($validated, 'contact.phone'),
             'contact_email' => data_get($validated, 'contact.email'),
             'whatsapp_url' => data_get($validated, 'contact.whatsapp_url'),
@@ -202,7 +235,7 @@ class FlatGalleryController extends Controller
         ]);
 
         return FlatResource::make(
-            $flat->fresh(['photos'])?->loadCount([
+            $flat->fresh(['photos', 'municipality'])?->loadCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])?->setAttribute('my_vote', null)
                 ->setAttribute('is_owned_by_viewer', true)
@@ -258,6 +291,7 @@ class FlatGalleryController extends Controller
         return $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'description' => ['required', 'string'],
+            'municipality_id' => ['nullable', 'integer', 'exists:municipalities,id'],
             'contact.phone' => ['required', 'string', 'max:32'],
             'contact.email' => ['required', 'email:rfc', 'max:255'],
             'contact.whatsapp_url' => ['nullable', 'string', 'max:2048'],

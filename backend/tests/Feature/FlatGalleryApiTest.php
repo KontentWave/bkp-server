@@ -10,6 +10,7 @@ use App\Models\Flat;
 use App\Models\FlatReport;
 use App\Models\Invitation;
 use App\Models\Landlord;
+use App\Models\Municipality;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -101,6 +102,38 @@ class FlatGalleryApiTest extends TestCase
             'whatsapp_url' => 'https://wa.me/421900123456',
             'telegram_url' => 'https://t.me/updated_owner',
             'viber_url' => 'viber://chat?number=%2B421900123456',
+        ]);
+    }
+
+    #[Test]
+    public function landlord_can_search_municipalities(): void
+    {
+        [$privateKey, $token] = $this->createLandlordSession();
+
+        $expectedMunicipality = Municipality::query()
+            ->where('name', 'Banská Bystrica')
+            ->where('district', 'Banská Bystrica')
+            ->where('region', 'Banskobystrický kraj')
+            ->firstOrFail();
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/municipalities?query=Bansk', $timestamp, $nonce);
+
+        $response = $this->call('GET', '/api/municipalities', ['query' => 'Bansk'], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertJsonFragment([
+            'id' => $expectedMunicipality->id,
+            'name' => 'Banská Bystrica',
+            'district' => 'Banská Bystrica',
+            'region' => 'Banskobystrický kraj',
         ]);
     }
 
@@ -250,8 +283,12 @@ class FlatGalleryApiTest extends TestCase
                 [
                     'id',
                     'landlord_id',
+                    'municipality_id',
                     'title',
                     'description',
+                    'city',
+                    'district',
+                    'region',
                     'photos',
                     'votes_count',
                     'my_vote',
@@ -331,7 +368,7 @@ class FlatGalleryApiTest extends TestCase
         $data = $response->json();
 
         $this->assertSame(
-            ['id', 'landlord_id', 'title', 'description', 'contact', 'photos', 'votes_count', 'my_vote', 'is_owned_by_viewer', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reason', 'created_at', 'updated_at'],
+            ['id', 'landlord_id', 'municipality_id', 'title', 'description', 'city', 'district', 'region', 'contact', 'photos', 'votes_count', 'my_vote', 'is_owned_by_viewer', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reason', 'created_at', 'updated_at'],
             array_keys($data['data'][0]),
         );
         $this->assertSame(
