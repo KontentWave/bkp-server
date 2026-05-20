@@ -37,7 +37,7 @@ class FlatGalleryController extends Controller
 
         $rows = \App\Models\Municipality::query()
             ->where('name', 'like', $query.'%')
-            ->orWhere('district', 'like', $query.'%')
+            ->orderByRaw('case when name = ? then 0 else 1 end', [$query])
             ->orderBy('name')
             ->orderBy('district')
             ->limit($perPage)

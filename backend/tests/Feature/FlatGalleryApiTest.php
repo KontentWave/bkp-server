@@ -108,7 +108,7 @@ class FlatGalleryApiTest extends TestCase
     #[Test]
     public function landlord_can_search_municipalities(): void
     {
-        [$privateKey, $token] = $this->createLandlordSession();
+        [, $token] = $this->createLandlordSession();
 
         $expectedMunicipality = Municipality::query()
             ->where('name', 'Banská Bystrica')
@@ -116,17 +116,8 @@ class FlatGalleryApiTest extends TestCase
             ->where('region', 'Banskobystrický kraj')
             ->firstOrFail();
 
-        $timestamp = (string) now()->timestamp;
-        $nonce = (string) Str::uuid();
-        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/municipalities?query=Bansk', $timestamp, $nonce);
-
-        $response = $this->call('GET', '/api/municipalities', ['query' => 'Bansk'], [], [], [
-            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
-            'HTTP_X_HARDWARE_NONCE' => $nonce,
-            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
-            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
-            'HTTP_ACCEPT' => 'application/json',
-        ]);
+        $response = $this->withToken($token)
+            ->getJson('/api/municipalities?query=Bansk');
 
         $response->assertOk();
         $response->assertJsonFragment([
@@ -135,6 +126,10 @@ class FlatGalleryApiTest extends TestCase
             'district' => 'Banská Bystrica',
             'region' => 'Banskobystrický kraj',
         ]);
+
+        foreach ($response->json('data') as $row) {
+            $this->assertStringStartsWith('Bansk', $row['name']);
+        }
     }
 
     #[Test]
