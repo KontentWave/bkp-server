@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Route;
 Route::post('/admins/tokens', [AdminTokenController::class, 'store']);
 Route::post('/landlords/tokens', [LandlordTokenController::class, 'store']);
 Route::post('/verify', [VerificationController::class, 'store']);
+Route::get('/photos/{photo}/content', [FlatGalleryController::class, 'showPhotoContent']);
 
 Route::middleware('auth:sanctum')->group(function (): void {
     Route::get('/admin/logs', [AdminLogController::class, 'index']);
@@ -25,7 +26,6 @@ Route::middleware(['auth:sanctum', 'hardware.signature'])->group(function (): vo
     Route::post('/flats', [FlatGalleryController::class, 'store']);
     Route::patch('/flats/{flat}', [FlatGalleryController::class, 'update']);
     Route::post('/flats/{flat}/photos', [FlatGalleryController::class, 'storePhoto']);
-    Route::get('/photos/{photo}/content', [FlatGalleryController::class, 'showPhotoContent']);
     Route::delete('/photos/{photo}', [FlatGalleryController::class, 'destroyPhoto']);
     Route::post('/flats/{flat}/vote', [FlatGalleryController::class, 'vote']);
     Route::post('/flats/{flat}/report-landlord', [FlatGalleryController::class, 'reportLandlord']);

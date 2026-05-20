@@ -15,7 +15,7 @@ class FlatPhotoResource extends JsonResource
         return [
             'id' => $this->id,
             'flat_id' => $this->flat_id,
-            'content_url' => url('/api/photos/'.$this->id.'/content'),
+            'content_url' => '/api/photos/'.$this->id.'/content',
             'original_filename' => $this->original_filename,
             'mime_type' => $this->mime_type,
             'byte_size' => $this->byte_size,

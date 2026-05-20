@@ -187,6 +187,61 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function escort_can_view_and_like_all_flats_when_invitation_access_is_disabled(): void
+    {
+        config(['services.flat_gallery.enforce_escort_invitation_access' => false]);
+
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111222');
+        $firstLandlord = Landlord::query()->create(['is_verified' => true]);
+        $secondLandlord = Landlord::query()->create(['is_verified' => true]);
+
+        $visibleFlat = Flat::query()->create([
+            'landlord_id' => $firstLandlord->id,
+            'title' => 'Visible Flat',
+            'description' => 'Should be visible without invitation gating.',
+        ]);
+
+        Flat::query()->create([
+            'landlord_id' => $secondLandlord->id,
+            'title' => 'Another Visible Flat',
+            'description' => 'Should also be visible without invitation gating.',
+        ]);
+
+        $indexTimestamp = (string) now()->timestamp;
+        $indexNonce = (string) Str::uuid();
+        $indexSignature = $this->signHardwareContent('', $privateKey, 'GET', '/api/flats', $indexTimestamp, $indexNonce);
+
+        $indexResponse = $this->call('GET', '/api/flats', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $indexNonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $indexTimestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $indexSignature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $indexResponse->assertOk();
+        $indexResponse->assertJsonCount(2, 'data');
+        $indexResponse->assertJsonFragment(['title' => 'Visible Flat']);
+        $indexResponse->assertJsonFragment(['title' => 'Another Visible Flat']);
+
+        $payload = ['is_favorite' => true];
+        $voteTimestamp = (string) now()->timestamp;
+        $voteNonce = (string) Str::uuid();
+        $voteSignature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$visibleFlat->id.'/vote', $voteTimestamp, $voteNonce);
+
+        $voteResponse = $this->withToken($token)->withHeaders([
+            'X-Hardware-Nonce' => $voteNonce,
+            'X-Hardware-Timestamp' => $voteTimestamp,
+            'X-Hardware-Signature' => $voteSignature,
+        ])->postJson('/api/flats/'.$visibleFlat->id.'/vote', $payload);
+
+        $voteResponse->assertOk()
+            ->assertJsonPath('data.flat_id', $visibleFlat->id)
+            ->assertJsonPath('data.escort_id', $escort->id)
+            ->assertJsonPath('data.is_favorite', true);
+    }
+
+    #[Test]
     public function landlord_listing_returns_owned_and_other_flats_and_hides_storage_internals(): void
     {
         Storage::fake('public');
@@ -234,7 +289,7 @@ class FlatGalleryApiTest extends TestCase
         $response->assertJsonPath('data.0.is_owned_by_viewer', false);
         $response->assertJsonPath('data.1.is_owned_by_viewer', true);
         $response->assertJsonPath('data.1.photos.0.original_filename', 'owned-flat.jpg');
-        $response->assertJsonPath('data.1.photos.0.content_url', url('/api/photos/'.$ownedFlat->photos()->firstOrFail()->id.'/content'));
+        $response->assertJsonPath('data.1.photos.0.content_url', '/api/photos/'.$ownedFlat->photos()->firstOrFail()->id.'/content');
         $response->assertJsonFragment(['title' => 'Other Flat']);
         $response->assertJsonMissingPath('data.1.photos.0.storage_disk');
         $response->assertJsonMissingPath('data.1.photos.0.storage_path');
@@ -375,7 +430,7 @@ class FlatGalleryApiTest extends TestCase
             ['id', 'flat_id', 'content_url', 'original_filename', 'mime_type', 'byte_size', 'sort_order', 'created_at', 'updated_at'],
             array_keys($data['data'][0]['photos'][0]),
         );
-        $this->assertSame(url('/api/photos/'.$photo->id.'/content'), $data['data'][0]['photos'][0]['content_url']);
+        $this->assertSame('/api/photos/'.$photo->id.'/content', $data['data'][0]['photos'][0]['content_url']);
         $this->assertSame(0, $data['data'][0]['landlord_reports_count']);
         $this->assertSame([], $data['data'][0]['landlord_report_reasons']);
         $this->assertArrayHasKey('reported_escorts_summary', $data);
@@ -808,24 +863,15 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
-    public function escort_can_fetch_photo_content_via_protected_media_route(): void
+    public function photo_content_route_is_publicly_readable(): void
     {
         Storage::fake('public');
 
-        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111444');
         $landlord = Landlord::query()->create(['is_verified' => true]);
         $flat = Flat::query()->create([
             'landlord_id' => $landlord->id,
             'title' => 'Visible Flat',
-            'description' => 'Escort can read photo content.',
-        ]);
-
-        Invitation::query()->create([
-            'landlord_id' => $landlord->id,
-            'phone_number' => $escort->phone_number,
-            'otp_token' => hash('sha256', '4444'),
-            'status' => InvitationStatus::Accepted,
-            'expires_at' => now()->addMinutes(10),
+            'description' => 'Anyone can read photo content.',
         ]);
 
         Storage::disk('public')->put('flat-photos/content.jpg', 'photo-content');
@@ -835,6 +881,61 @@ class FlatGalleryApiTest extends TestCase
             'original_filename' => 'content.jpg',
             'mime_type' => 'image/jpeg',
             'byte_size' => 13,
+            'sort_order' => 1,
+        ]);
+
+        $response = $this->get('/api/photos/'.$photo->id.'/content');
+
+        $response->assertOk();
+        $this->assertSame('no-store, private', $response->headers->get('cache-control'));
+    }
+
+    #[Test]
+    public function photo_content_route_returns_not_found_when_file_is_missing(): void
+    {
+        Storage::fake('public');
+
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Hidden Flat',
+            'description' => 'Missing file should fail cleanly.',
+        ]);
+
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/hidden.jpg',
+            'original_filename' => 'hidden.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 14,
+            'sort_order' => 1,
+        ]);
+
+        $response = $this->getJson('/api/photos/'.$photo->id.'/content');
+
+        $response->assertNotFound()->assertJsonPath('message', 'Photo file not found.');
+    }
+
+    #[Test]
+    public function verified_landlord_can_fetch_foreign_photo_content(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token] = $this->createLandlordSession();
+        $foreignLandlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $foreignLandlord->id,
+            'title' => 'Foreign Flat',
+            'description' => 'Visible to verified landlords.',
+        ]);
+
+        Storage::disk('public')->put('flat-photos/foreign.jpg', 'foreign-photo-content');
+        $photo = $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/foreign.jpg',
+            'original_filename' => 'foreign.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 21,
             'sort_order' => 1,
         ]);
 
@@ -850,45 +951,6 @@ class FlatGalleryApiTest extends TestCase
         ]);
 
         $response->assertOk();
-        $this->assertSame('no-store, private', $response->headers->get('cache-control'));
-    }
-
-    #[Test]
-    public function escort_cannot_fetch_foreign_photo_content(): void
-    {
-        Storage::fake('public');
-
-        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111445');
-        $landlord = Landlord::query()->create(['is_verified' => true]);
-        $flat = Flat::query()->create([
-            'landlord_id' => $landlord->id,
-            'title' => 'Hidden Flat',
-            'description' => 'Escort should not read this.',
-        ]);
-
-        Storage::disk('public')->put('flat-photos/hidden.jpg', 'hidden-content');
-        $photo = $flat->photos()->create([
-            'storage_disk' => 'public',
-            'storage_path' => 'flat-photos/hidden.jpg',
-            'original_filename' => 'hidden.jpg',
-            'mime_type' => 'image/jpeg',
-            'byte_size' => 14,
-            'sort_order' => 1,
-        ]);
-
-        $timestamp = (string) now()->timestamp;
-        $nonce = (string) Str::uuid();
-        $signature = $this->signHardwareContent('', $privateKey, 'GET', '/api/photos/'.$photo->id.'/content', $timestamp, $nonce);
-
-        $response = $this->call('GET', '/api/photos/'.$photo->id.'/content', [], [], [], [
-            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
-            'HTTP_X_HARDWARE_NONCE' => $nonce,
-            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
-            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
-            'HTTP_ACCEPT' => 'application/json',
-        ]);
-
-        $response->assertForbidden()->assertJsonPath('message', 'You do not have access to this photo.');
     }
 
     #[Test]
