@@ -25,6 +25,7 @@ Route::middleware(['auth:sanctum', 'hardware.signature'])->group(function (): vo
     Route::get('/reported-escorts-summary', [FlatGalleryController::class, 'reportedEscortSummary']);
     Route::post('/flats', [FlatGalleryController::class, 'store']);
     Route::patch('/flats/{flat}', [FlatGalleryController::class, 'update']);
+    Route::delete('/flats/{flat}', [FlatGalleryController::class, 'destroy']);
     Route::post('/flats/{flat}/photos', [FlatGalleryController::class, 'storePhoto']);
     Route::delete('/photos/{photo}', [FlatGalleryController::class, 'destroyPhoto']);
     Route::post('/flats/{flat}/vote', [FlatGalleryController::class, 'vote']);

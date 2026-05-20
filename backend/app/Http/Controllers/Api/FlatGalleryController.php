@@ -121,12 +121,14 @@ class FlatGalleryController extends Controller
                 ->where('escort_id', $actor->id)
                 ->value('is_favorite'));
             $flat->setAttribute(
-                'my_landlord_report_reason',
+                'my_landlord_report_reasons',
                 $flat->reports
                     ->where('reporter_escort_id', $actor->id)
                     ->where('reported_landlord_id', $flat->landlord_id)
                     ->sortByDesc('id')
-                    ->first()?->reason_code,
+                    ->pluck('reason_code')
+                    ->values()
+                    ->all(),
             );
             $flat->setAttribute('landlord_reports_count', $landlordReportSummary['count']);
             $flat->setAttribute('landlord_report_reasons', $landlordReportSummary['reason_codes']);
@@ -242,6 +244,31 @@ class FlatGalleryController extends Controller
                 ->setAttribute('landlord_reports_count', $this->buildFlatLandlordReportSummary($flat)['count'])
                 ->setAttribute('landlord_report_reasons', $this->buildFlatLandlordReportSummary($flat)['reason_codes'])
         )->response();
+    }
+
+    public function destroy(Request $request, Flat $flat): JsonResponse
+    {
+        $landlord = $request->user();
+
+        if (! $landlord instanceof Landlord) {
+            return response()->json([
+                'message' => 'Only landlords can delete flats.',
+            ], JsonResponse::HTTP_FORBIDDEN);
+        }
+
+        if (! $landlord->is_verified || $flat->landlord_id !== $landlord->id) {
+            return response()->json([
+                'message' => 'You do not own this flat.',
+            ], JsonResponse::HTTP_FORBIDDEN);
+        }
+
+        foreach ($flat->photos as $photo) {
+            Storage::disk($photo->storage_disk)->delete($photo->storage_path);
+        }
+
+        $flat->delete();
+
+        return response()->json([], JsonResponse::HTTP_NO_CONTENT);
     }
 
     public function storePhoto(Request $request, Flat $flat): JsonResponse

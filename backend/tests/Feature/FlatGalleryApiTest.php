@@ -106,6 +106,91 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function landlord_can_delete_owned_flat_and_related_files(): void
+    {
+        Storage::fake('public');
+
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Delete Flat',
+            'description' => 'Delete me permanently.',
+        ]);
+
+        Storage::disk('public')->put('flat-photos/delete-flat.jpg', 'photo-bytes');
+        $flat->photos()->create([
+            'storage_disk' => 'public',
+            'storage_path' => 'flat-photos/delete-flat.jpg',
+            'original_filename' => 'delete-flat.jpg',
+            'mime_type' => 'image/jpeg',
+            'byte_size' => 11,
+            'sort_order' => 1,
+        ]);
+        $escort = Escort::query()->create([
+            'external_id' => 29999,
+            'phone_number' => '+421900119999',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+        $flat->votes()->create([
+            'escort_id' => $escort->id,
+            'is_favorite' => true,
+        ]);
+        FlatReport::query()->create([
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => $escort->external_id,
+            'reason_code' => LandlordReportReason::Drugs->value,
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'DELETE', '/api/flats/'.$flat->id, $timestamp, $nonce);
+
+        $response = $this->call('DELETE', '/api/flats/'.$flat->id, [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertNoContent();
+        $this->assertDatabaseMissing('flats', ['id' => $flat->id]);
+        $this->assertDatabaseCount('votes', 0);
+        $this->assertDatabaseCount('flat_reports', 0);
+        $this->assertDatabaseCount('flat_photos', 0);
+        $this->assertFalse(Storage::disk('public')->exists('flat-photos/delete-flat.jpg'));
+    }
+
+    #[Test]
+    public function landlord_cannot_delete_another_landlords_flat(): void
+    {
+        [$privateKey, $token] = $this->createLandlordSession();
+        $foreignLandlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $foreignLandlord->id,
+            'title' => 'Foreign Delete Flat',
+            'description' => 'Should stay put.',
+        ]);
+
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareContent('', $privateKey, 'DELETE', '/api/flats/'.$flat->id, $timestamp, $nonce);
+
+        $response = $this->call('DELETE', '/api/flats/'.$flat->id, [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+            'HTTP_X_HARDWARE_NONCE' => $nonce,
+            'HTTP_X_HARDWARE_TIMESTAMP' => $timestamp,
+            'HTTP_X_HARDWARE_SIGNATURE' => $signature,
+            'HTTP_ACCEPT' => 'application/json',
+        ]);
+
+        $response->assertForbidden()->assertJsonPath('message', 'You do not own this flat.');
+        $this->assertDatabaseHas('flats', ['id' => $flat->id]);
+    }
+
+    #[Test]
     public function landlord_can_search_municipalities(): void
     {
         [, $token] = $this->createLandlordSession();
@@ -418,7 +503,7 @@ class FlatGalleryApiTest extends TestCase
         $data = $response->json();
 
         $this->assertSame(
-            ['id', 'landlord_id', 'municipality_id', 'title', 'description', 'city', 'district', 'region', 'contact', 'photos', 'votes_count', 'my_vote', 'is_owned_by_viewer', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reason', 'created_at', 'updated_at'],
+            ['id', 'landlord_id', 'municipality_id', 'title', 'description', 'city', 'district', 'region', 'contact', 'photos', 'votes_count', 'my_vote', 'is_owned_by_viewer', 'landlord_reports_count', 'landlord_report_reasons', 'my_landlord_report_reasons', 'created_at', 'updated_at'],
             array_keys($data['data'][0]),
         );
         $this->assertSame(
@@ -1215,7 +1300,7 @@ class FlatGalleryApiTest extends TestCase
             ->assertJsonPath('data.0.id', $flat->id)
             ->assertJsonPath('data.0.landlord_reports_count', 1)
             ->assertJsonPath('data.0.landlord_report_reasons.0', EscortReportReason::DidNotKeepAgreement->value)
-            ->assertJsonPath('data.0.my_landlord_report_reason', EscortReportReason::DidNotKeepAgreement->value);
+            ->assertJsonPath('data.0.my_landlord_report_reasons.0', EscortReportReason::DidNotKeepAgreement->value);
     }
 
     #[Test]
