@@ -135,6 +135,7 @@ class InvitationController extends Controller
         }
 
         $otpCode = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+        $otpTtlMinutes = (int) config('services.invitation.otp_ttl_minutes', 60);
 
         $invitation = Invitation::query()->create([
             'landlord_id' => $actor instanceof Landlord ? $actor->id : null,
@@ -147,7 +148,7 @@ class InvitationController extends Controller
             'escort_ad_url' => $escortAdUrl,
             'otp_token' => hash('sha256', $otpCode),
             'status' => InvitationStatus::Pending,
-            'expires_at' => now()->addMinutes(10),
+            'expires_at' => now()->addMinutes($otpTtlMinutes),
         ]);
 
         $deliveryPhoneNumber = $this->resolveSmsDeliveryPhoneNumber($invitation->phone_number);

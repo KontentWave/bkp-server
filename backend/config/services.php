@@ -56,6 +56,10 @@ return [
         'enforce_escort_invitation_access' => env('FLAT_GALLERY_ENFORCE_ESCORT_INVITATION_ACCESS', true),
     ],
 
+    'invitation' => [
+        'otp_ttl_minutes' => env('INVITATION_OTP_TTL_MINUTES', 60),
+    ],
+
     'webshare' => [
         'proxy' => env('WEBSHARE_PROXY'),
         'host' => env('WEBSHARE_PROXY_HOST'),
