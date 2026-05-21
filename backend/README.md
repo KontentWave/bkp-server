@@ -7,6 +7,42 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Local Flat Snapshot Sync
+
+Use `php artisan dev:sync-production-flats` to refresh the local `flats` and `flat_photos` tables from a separately configured production database connection.
+
+Required environment variables:
+
+- `PROD_SYNC_DB_DRIVER=pgsql` or `mysql` / `mariadb`
+- `PROD_SYNC_DB_HOST`, `PROD_SYNC_DB_PORT`, `PROD_SYNC_DB_DATABASE`, `PROD_SYNC_DB_USERNAME`, `PROD_SYNC_DB_PASSWORD`
+
+Alternative connection style:
+
+- `PROD_SYNC_DB_URL`
+
+Optional environment variables:
+
+- `PROD_SYNC_DB_SCHEMA=public`
+- `PROD_SYNC_DB_SSLMODE=prefer`
+- `PROD_SYNC_DB_CHARSET=utf8` for PostgreSQL or `utf8mb4` for MySQL / MariaDB
+- `PROD_SYNC_DB_COLLATION=utf8mb4_unicode_ci` for MySQL / MariaDB
+- `PROD_SYNC_FLAT_PHOTO_ROOT=/mounted/production/storage/app/public`
+
+Notes:
+
+- The command is local-only and exits in production.
+- It deletes local `flat_photos` and `flats` before importing the new snapshot.
+- Remote landlords are mapped to local placeholder landlord accounts shaped like `prod-sync-landlord-{remoteId}`.
+- Photo binaries are copied only when you pass `--copy-photos` and `PROD_SYNC_FLAT_PHOTO_ROOT` points at a readable production photo tree.
+
+Examples:
+
+```sh
+php artisan dev:sync-production-flats
+php artisan dev:sync-production-flats --chunk=100
+php artisan dev:sync-production-flats --copy-photos
+```
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

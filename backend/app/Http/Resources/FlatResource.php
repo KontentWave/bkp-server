@@ -13,7 +13,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
  * @property bool|null $is_owned_by_viewer
  * @property int|null $landlord_reports_count
  * @property array<int, string> $landlord_report_reasons
- * @property string|null $my_landlord_report_reason
+ * @property array<int, string> $my_landlord_report_reasons
  */
 class FlatResource extends JsonResource
 {
@@ -44,7 +44,7 @@ class FlatResource extends JsonResource
             'is_owned_by_viewer' => (bool) ($this->is_owned_by_viewer ?? false),
             'landlord_reports_count' => (int) ($this->landlord_reports_count ?? 0),
             'landlord_report_reasons' => $this->landlord_report_reasons ?? [],
-            'my_landlord_report_reason' => $this->my_landlord_report_reason,
+            'my_landlord_report_reasons' => $this->my_landlord_report_reasons ?? [],
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

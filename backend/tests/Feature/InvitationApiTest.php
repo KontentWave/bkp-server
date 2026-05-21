@@ -342,10 +342,10 @@ class InvitationApiTest extends TestCase
         ])->postJson('/api/invitations', $payload);
 
         $response->assertCreated()
-            ->assertJsonPath('data.phone_number', '+421947192590');
+            ->assertJsonPath('data.phone_number', '+421900111999');
 
         $this->assertDatabaseHas('invitations', [
-            'phone_number' => '+421947192590',
+            'phone_number' => '+421900111999',
             'escort_external_id' => 29637,
         ]);
 
@@ -542,10 +542,10 @@ class InvitationApiTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.actor_type', 'escort')
-            ->assertJsonPath('data.phone_number', '+421947192590');
+            ->assertJsonPath('data.phone_number', '+421900111222');
 
         $this->assertDatabaseHas('escorts', [
-            'phone_number' => '+421947192590',
+            'phone_number' => '+421900111222',
             'external_id' => 29637,
             'public_key' => $publicKey,
         ]);

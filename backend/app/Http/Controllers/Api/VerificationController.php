@@ -92,7 +92,10 @@ class VerificationController extends Controller
         }
 
         if ($snapshot !== null) {
-            $resolvedPhoneNumber = $snapshot->phoneNumber;
+            $resolvedPhoneNumber =
+                ! $this->shouldEnforceEscortPhoneMatch()
+                    ? $validated['phone_number']
+                    : $snapshot->phoneNumber;
             $resolvedExternalId = $snapshot->externalId;
             $resolvedAdUrl = $snapshot->adUrl;
             $resolvedScrapedAt = $snapshot->scrapedAt;

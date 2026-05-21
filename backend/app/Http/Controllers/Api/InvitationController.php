@@ -124,7 +124,11 @@ class InvitationController extends Controller
                 ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
             }
 
-            $targetPhoneNumber = $snapshot->phoneNumber;
+            $targetPhoneNumber =
+                ! $this->shouldEnforceEscortPhoneMatch()
+                && ($validated['phone_number'] ?? null) !== null
+                    ? $validated['phone_number']
+                    : $snapshot->phoneNumber;
             $escortExternalId = $snapshot->externalId;
             $escortAdUrl = $snapshot->adUrl;
             $phoneScrapedAt = $snapshot->scrapedAt;

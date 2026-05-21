@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\SyncProductionFlatsCommand;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -12,6 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        SyncProductionFlatsCommand::class,
+        __DIR__.'/../app/Console/Commands',
+    ])
     ->withBroadcasting(
         __DIR__.'/../routes/channels.php',
         ['middleware' => ['auth:sanctum', 'hardware.signature']],

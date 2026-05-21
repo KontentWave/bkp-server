@@ -52,6 +52,10 @@ return [
         'enforce_phone_match' => env('AMATERKY_ENFORCE_PHONE_MATCH', true),
     ],
 
+    'flat_gallery' => [
+        'enforce_escort_invitation_access' => env('FLAT_GALLERY_ENFORCE_ESCORT_INVITATION_ACCESS', true),
+    ],
+
     'webshare' => [
         'proxy' => env('WEBSHARE_PROXY'),
         'host' => env('WEBSHARE_PROXY_HOST'),
