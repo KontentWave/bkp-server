@@ -374,8 +374,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 ## Step 4.3: Field Test Readiness (UI Polish & Android Parity)
 
-- **Status:** Partially completed for live production validation on May 15, 2026. The UI clean-up slice, Android signer parity, Android runtime validation, deployed-backend reachability, Android and iOS escort onboarding, and cross-role invitation recovery are now proven on physical devices. Broader closed-pilot rollout and the long-term escort identity redesign remain open.
-- **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md).
+- **Status:** Partially completed for live production validation and pilot-distribution hardening on May 21, 2026. The UI clean-up slice, Android signer parity, Android runtime validation, deployed-backend reachability, Android and iOS escort onboarding, cross-role invitation recovery, role-aware local-versus-production routing, Android standalone tester distribution, and invitation OTP lifetime hardening are now proven or frozen. Broader closed-pilot rollout, large-scale iOS distribution, and the long-term escort identity redesign remain open.
+- **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md) and [ADR/4_5_pilot_distribution_environment_routing.md](ADR/4_5_pilot_distribution_environment_routing.md).
 - **Action:** Strip all developer diagnostic noise from the UI to create a confident, non-technical user experience, and implement the pending Android platform layer to enable end-to-end MVP testing.
 - **Platform Target:** Field testing must support both product contracts (Landlord and Escort) on both iOS and Android. Step 4.3 is not only about Android escorts; it is the parity and rollout-readiness step for the two-role mobile product across both platforms.
 - **Task:**
@@ -440,6 +440,14 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Real escort onboarding is now validated on both platforms:** One trusted Android escort and one trusted iOS escort completed live ad-bound OTP onboarding against production, each using a public `amaterky.sk` ad with a visible phone number.
 - **Cross-role invitation growth is now live:** The invitation backend was generalized so verified escorts can create landlord invitations, the production migration was deployed successfully, and the live escort-to-landlord invitation flow completed successfully end to end.
 - **The current pilot lane is now broader than the initial escort-only rehearsal:** the product has already passed landlord-to-landlord, landlord-to-escort, escort onboarding, landlord reporting, escort reporting, and escort-to-landlord invitation validation on production.
+- **Role-aware environment routing is now explicit:** local development now routes landlord traffic to production and escort traffic to the local Laravel server, while shared tester builds route both roles to production so downloaded builds cannot accidentally point escorts at a developer's local machine.
+- **Production-like local rehearsal data is now supported operationally:** the backend now includes a production flat-sync command with optional photo-copy support so local escort and landlord rehearsals can use realistic listings, reports, votes, and gallery media when needed.
+- **Protected photo delivery is now shared-hosting safe:** gallery images are now served through the backend media route instead of depending on public shared-hosting `/storage` exposure, because that storage path was not reliable in production.
+- **Late gallery polish is now in place for live testers:** flat headers now surface the city name, lists are grouped by region, region sections are collapsible, and each region heading shows the number of flats it contains.
+- **Invitation OTP lifetime is now one hour by default:** invitation creation now uses a configurable 60-minute OTP TTL, reducing friction when testers must download and install large mobile builds before activation.
+- **Android pilot distribution is now proven as a standalone path:** the EAS preview profile now produces a shareable Android APK that can be distributed through the Expo build page or mirrored onto file hosts such as OneDrive.
+- **EAS tester builds are now pinned to the production backend:** preview and production build profiles inject production API base URLs for both landlord and escort roles, and the app config is aligned with `expo-updates` without duplicate iOS share-extension metadata.
+- **Large-scale iOS rollout is now understood as a policy constraint rather than a build failure:** the iOS app remains technically buildable, but broad external distribution is still constrained by Apple review and distribution policy because reviewer-visible flows reference `amaterky.sk` escort listings.
 
 ### Step 4.3 Remaining Scope
 
@@ -451,6 +459,9 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Landlord report-visibility hardening is still future work:** The current `publish at least one flat first` gate is intentionally light for pilot use. A later anti-misuse hardening pass should require stronger landlord credibility signals, such as one flat confirmed by at least three registered escorts, before broader escort-report visibility is expanded.
 - **Current landlord report visibility is intentionally broad after the first gate:** The present field-test contract exposes globally shared landlord-side escort reports immediately after a landlord publishes at least one flat. Any stricter threshold belongs to a later hardening pass rather than the current pilot contract.
 - **A separate landlord-versus-escort app split is explicitly deferred:** revisit that only if real usage shows persistent role confusion, materially different acquisition channels, security-boundary needs, or release velocity problems that the current unified apps cannot absorb.
+- **Broad iOS pilot distribution remains unresolved at the policy layer:** Android can scale through standalone APK sideload distribution now, but large non-technical iPhone rollout still needs either a reviewer-safe product variant, an ad hoc or internal-device process, or acceptance of substantial Apple review risk.
+- **Pilot build-and-share operations still need a written runbook:** the team now has a working Android standalone distribution path and a constrained iOS path, but the exact tester-facing install instructions, build-replacement cadence, and invitation-only rollout procedure still need to be documented as an operational playbook.
+- **Client/server version compatibility gating is still pending:** the mobile app already carries `1.0.0`, but the backend still needs explicit per-platform support policy, version headers, and an obsolete-client blocking contract before rollout can rely on forced updates instead of manual support.
 
 ### Mandatory Post-Pilot Expansion: Stable Escort Identity With Alias History
 
