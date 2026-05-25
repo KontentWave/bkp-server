@@ -11,12 +11,16 @@ use App\Models\Landlord;
 use App\Services\EscortAds\EscortAdScrapeException;
 use App\Services\EscortAds\EscortAdScraper;
 use App\Services\EscortAds\EscortAdSnapshot;
+use App\Services\PhoneNumberNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class VerificationController extends Controller
 {
-    public function __construct(private readonly EscortAdScraper $escortAdScraper) {}
+    public function __construct(
+        private readonly EscortAdScraper $escortAdScraper,
+        private readonly PhoneNumberNormalizer $phoneNumberNormalizer,
+    ) {}
 
     private function shouldEnforceEscortPhoneMatch(): bool
     {
@@ -30,6 +34,16 @@ class VerificationController extends Controller
             'otp' => ['required', 'digits:4'],
             'public_key' => ['required', 'string'],
         ]);
+
+        $normalizedPhoneNumber = $this->phoneNumberNormalizer->normalize($validated['phone_number']);
+
+        if ($normalizedPhoneNumber === null) {
+            return response()->json([
+                'message' => 'The provided phone number is not in a supported format.',
+            ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $validated['phone_number'] = $normalizedPhoneNumber;
 
         $invitation = Invitation::query()
             ->where('phone_number', $validated['phone_number'])

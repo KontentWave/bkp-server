@@ -12,13 +12,17 @@ use App\Models\Landlord;
 use App\Services\EscortAds\EscortAdScrapeException;
 use App\Services\EscortAds\EscortAdScraper;
 use App\Services\EscortAds\EscortAdSnapshot;
+use App\Services\PhoneNumberNormalizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class InvitationController extends Controller
 {
-    public function __construct(private readonly EscortAdScraper $escortAdScraper) {}
+    public function __construct(
+        private readonly EscortAdScraper $escortAdScraper,
+        private readonly PhoneNumberNormalizer $phoneNumberNormalizer,
+    ) {}
 
     private function shouldEnforceEscortPhoneMatch(): bool
     {
@@ -68,7 +72,6 @@ class InvitationController extends Controller
                 'nullable',
                 'string',
                 'max:32',
-                'regex:/^\+\d{10,15}$/',
             ],
             'invited_role' => ['required', Rule::in(['escort', 'landlord'])],
             'escort_external_id' => [
@@ -92,6 +95,16 @@ class InvitationController extends Controller
                 'max:255',
             ],
         ]);
+
+        $normalizedPhoneNumber = $this->phoneNumberNormalizer->normalize($validated['phone_number'] ?? null);
+
+        if (($validated['phone_number'] ?? null) !== null && $normalizedPhoneNumber === null) {
+            return response()->json([
+                'message' => 'The provided phone number is not in a supported format.',
+            ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $validated['phone_number'] = $normalizedPhoneNumber;
 
         $targetPhoneNumber = $validated['phone_number'] ?? null;
         $escortExternalId = $validated['escort_external_id'] ?? null;

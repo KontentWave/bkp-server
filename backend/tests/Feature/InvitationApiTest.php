@@ -189,6 +189,49 @@ class InvitationApiTest extends TestCase
     }
 
     #[Test]
+    public function escort_invitation_creation_accepts_local_slovak_phone_format(): void
+    {
+        config()->set('services.smstools.local_override_phone', null);
+        Queue::fake();
+        $this->fakeEscortAdScraper([
+            29637 => $this->makeEscortAdSnapshot(29637, '+421910547109'),
+        ]);
+
+        [$privateKey, $publicKey] = $this->generateEcKeyPair();
+
+        $tokenResponse = $this->postJson('/api/landlords/tokens', [
+            'public_key' => $publicKey,
+        ]);
+
+        $token = $tokenResponse->json('data.token');
+        $payload = [
+            'phone_number' => '0910547109',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/invitations', $timestamp, $nonce);
+
+        $response = $this->withToken($token)->withHeaders([
+            'X-Hardware-Nonce' => $nonce,
+            'X-Hardware-Timestamp' => $timestamp,
+            'X-Hardware-Signature' => $signature,
+        ])->postJson('/api/invitations', $payload);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.phone_number', '+421910547109')
+            ->assertJsonPath('data.delivery_phone_number', '+421910547109');
+
+        $this->assertDatabaseHas('invitations', [
+            'phone_number' => '+421910547109',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+            'status' => InvitationStatus::Pending->value,
+        ]);
+    }
+
+    #[Test]
     public function landlord_invitation_creation_sends_generic_sms(): void
     {
         Queue::fake();
@@ -477,6 +520,45 @@ class InvitationApiTest extends TestCase
         $this->assertDatabaseHas('invitations', [
             'phone_number' => '+421900111222',
             'status' => InvitationStatus::Pending->value,
+        ]);
+    }
+
+    #[Test]
+    public function otp_verification_accepts_local_slovak_phone_format(): void
+    {
+        $this->fakeEscortAdScraper([
+            29637 => $this->makeEscortAdSnapshot(29637, '+421910547109'),
+        ]);
+        $landlord = Landlord::query()->create();
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => '+421910547109',
+            'escort_ad_url' => 'https://amaterky.sk/29637',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+            'phone_scraped_at' => now(),
+            'otp_token' => hash('sha256', '8492'),
+            'status' => InvitationStatus::Pending,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $publicKey = "-----BEGIN PUBLIC KEY-----\nTEST-KEY\n-----END PUBLIC KEY-----";
+
+        $response = $this->postJson('/api/verify', [
+            'phone_number' => '0910547109',
+            'otp' => '8492',
+            'public_key' => $publicKey,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.actor_type', 'escort')
+            ->assertJsonPath('data.phone_number', '+421910547109');
+
+        $this->assertDatabaseHas('escorts', [
+            'phone_number' => '+421910547109',
+            'external_id' => 29637,
+            'public_key' => $publicKey,
         ]);
     }
 
