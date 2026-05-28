@@ -50,6 +50,39 @@ class InvitationController extends Controller
         return $this->storeInvitation($request);
     }
 
+    public function requestOtp(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'phone_number' => ['required', 'string', 'max:32'],
+            'invited_role' => ['required', Rule::in(['escort', 'landlord'])],
+        ]);
+
+        $normalizedPhoneNumber = $this->phoneNumberNormalizer->normalize($validated['phone_number']);
+
+        if ($normalizedPhoneNumber === null) {
+            return response()->json([
+                'message' => 'The provided phone number is not in a supported format.',
+            ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        Invitation::query()
+            ->where('phone_number', $normalizedPhoneNumber)
+            ->where('invited_role', $validated['invited_role'])
+            ->where('status', InvitationStatus::Pending)
+            ->update([
+                'status' => InvitationStatus::Declined,
+            ]);
+
+        return $this->createInvitation(
+            actor: null,
+            invitedRole: $validated['invited_role'],
+            targetPhoneNumber: $normalizedPhoneNumber,
+            escortExternalId: null,
+            escortAdUrl: null,
+            phoneScrapedAt: null,
+        );
+    }
+
     private function storeInvitation(Request $request): JsonResponse
     {
         $actor = $request->user();
@@ -147,22 +180,45 @@ class InvitationController extends Controller
             $phoneScrapedAt = $snapshot->scrapedAt;
         }
 
+        return $this->createInvitation(
+            actor: $actor,
+            invitedRole: $validated['invited_role'],
+            targetPhoneNumber: $targetPhoneNumber,
+            escortExternalId: $escortExternalId,
+            escortAdUrl: $escortAdUrl,
+            phoneScrapedAt: $phoneScrapedAt,
+        );
+    }
+
+    private function createInvitation(
+        Landlord|Escort|null $actor,
+        string $invitedRole,
+        string $targetPhoneNumber,
+        ?int $escortExternalId,
+        ?string $escortAdUrl,
+        $phoneScrapedAt,
+    ): JsonResponse {
         $otpCode = str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
         $otpTtlMinutes = (int) config('services.invitation.otp_ttl_minutes', 60);
 
-        $invitation = Invitation::query()->create([
+        $invitationAttributes = [
             'landlord_id' => $actor instanceof Landlord ? $actor->id : null,
-            'inviter_type' => $actor::class,
-            'inviter_id' => $actor->id,
             'phone_number' => $targetPhoneNumber,
             'phone_scraped_at' => $phoneScrapedAt,
-            'invited_role' => $validated['invited_role'],
+            'invited_role' => $invitedRole,
             'escort_external_id' => $escortExternalId,
             'escort_ad_url' => $escortAdUrl,
             'otp_token' => hash('sha256', $otpCode),
             'status' => InvitationStatus::Pending,
             'expires_at' => now()->addMinutes($otpTtlMinutes),
-        ]);
+        ];
+
+        if ($actor !== null) {
+            $invitationAttributes['inviter_type'] = $actor::class;
+            $invitationAttributes['inviter_id'] = $actor->id;
+        }
+
+        $invitation = Invitation::query()->create($invitationAttributes);
 
         $deliveryPhoneNumber = $this->resolveSmsDeliveryPhoneNumber($invitation->phone_number);
 

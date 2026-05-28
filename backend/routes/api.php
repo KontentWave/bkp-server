@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('client.version')->group(function (): void {
     Route::post('/admins/tokens', [AdminTokenController::class, 'store']);
     Route::post('/landlords/tokens', [LandlordTokenController::class, 'store']);
+    Route::post('/request-otp', [InvitationController::class, 'requestOtp']);
     Route::post('/verify', [VerificationController::class, 'store']);
     Route::get('/photos/{photo}/content', [FlatGalleryController::class, 'showPhotoContent']);
 

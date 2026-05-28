@@ -49,6 +49,56 @@ class InvitationApiTest extends TestCase
     }
 
     #[Test]
+    public function self_service_landlord_otp_request_creates_a_pending_invitation(): void
+    {
+        config()->set('services.smstools.local_override_phone', null);
+        Queue::fake();
+
+        $response = $this->postJson('/api/request-otp', [
+            'phone_number' => '0917047260',
+            'invited_role' => 'landlord',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.invited_role', 'landlord')
+            ->assertJsonPath('data.phone_number', '+421917047260')
+            ->assertJsonPath('data.delivery_phone_number', '+421917047260');
+
+        $this->assertDatabaseHas('invitations', [
+            'phone_number' => '+421917047260',
+            'invited_role' => 'landlord',
+            'status' => InvitationStatus::Pending->value,
+        ]);
+
+        Queue::assertPushed(SendSmsMessageJob::class);
+    }
+
+    #[Test]
+    public function self_service_escort_otp_request_creates_a_pending_invitation_without_scraping(): void
+    {
+        config()->set('services.smstools.local_override_phone', null);
+        Queue::fake();
+
+        $response = $this->postJson('/api/request-otp', [
+            'phone_number' => '+421918273790',
+            'invited_role' => 'escort',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.invited_role', 'escort')
+            ->assertJsonPath('data.phone_number', '+421918273790');
+
+        $this->assertDatabaseHas('invitations', [
+            'phone_number' => '+421918273790',
+            'invited_role' => 'escort',
+            'escort_external_id' => null,
+            'status' => InvitationStatus::Pending->value,
+        ]);
+
+        Queue::assertPushed(SendSmsMessageJob::class);
+    }
+
+    #[Test]
     public function invitation_creation_sends_generic_sms(): void
     {
         config()->set('services.smstools.local_override_phone', null);
