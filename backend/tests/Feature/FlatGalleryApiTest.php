@@ -522,11 +522,12 @@ class FlatGalleryApiTest extends TestCase
         $this->assertSame(true, $data['reported_escorts_summary_access']['can_view_reports']);
         $this->assertSame('', $data['reported_escorts_summary_access']['message']);
         $this->assertSame(
-            ['report_id', 'flat_id', 'flat_title', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
+            ['report_id', 'flat_id', 'flat_title', 'flat_contact_phone', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
             array_keys($data['reported_escorts_summary'][0]),
         );
         $this->assertSame($flat->id, $data['reported_escorts_summary'][0]['flat_id']);
         $this->assertSame('Contract Flat', $data['reported_escorts_summary'][0]['flat_title']);
+        $this->assertSame('+421900111222', $data['reported_escorts_summary'][0]['flat_contact_phone']);
         $this->assertSame($escort->id, $data['reported_escorts_summary'][0]['escort_id']);
         $this->assertSame(29637, $data['reported_escorts_summary'][0]['escort_external_id']);
         $this->assertSame('+421900111555', $data['reported_escorts_summary'][0]['phone_number']);
@@ -577,11 +578,12 @@ class FlatGalleryApiTest extends TestCase
         $this->assertSame('', $data['meta']['message']);
 
         $this->assertSame(
-            ['report_id', 'flat_id', 'flat_title', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
+            ['report_id', 'flat_id', 'flat_title', 'flat_contact_phone', 'escort_id', 'escort_external_id', 'phone_number', 'reason_code', 'updated_at'],
             array_keys($data['data'][0]),
         );
         $this->assertSame($flat->id, $data['data'][0]['flat_id']);
         $this->assertSame('Moderated Flat', $data['data'][0]['flat_title']);
+        $this->assertSame(null, $data['data'][0]['flat_contact_phone']);
         $this->assertSame($escort->id, $data['data'][0]['escort_id']);
         $this->assertSame(29638, $data['data'][0]['escort_external_id']);
         $this->assertSame('+421900111556', $data['data'][0]['phone_number']);

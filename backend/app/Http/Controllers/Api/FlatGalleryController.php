@@ -577,7 +577,7 @@ class FlatGalleryController extends Controller
         /** @var \Illuminate\Database\Eloquent\Collection<int, FlatReport> $reports */
         $reports = FlatReport::query()
             ->with([
-                'flat:id,title',
+                'flat:id,title,contact_phone',
                 'reportedEscort:id,phone_number',
             ])
             ->whereNotNull('reported_escort_external_id')
@@ -590,6 +590,7 @@ class FlatGalleryController extends Controller
                 'report_id' => $report->id,
                 'flat_id' => $report->flat_id,
                 'flat_title' => $report->flat?->title,
+                'flat_contact_phone' => $report->flat?->contact_phone,
                 'escort_id' => $report->reported_escort_id,
                 'escort_external_id' => $report->reported_escort_external_id,
                 'phone_number' => $report->reportedEscort?->phone_number,
