@@ -1408,6 +1408,47 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function landlord_can_report_escort_for_a_fake_listing(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $escort = Escort::query()->create([
+            'external_id' => 29642,
+            'phone_number' => '+421900111451',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Fraud Report Flat',
+            'description' => 'Landlord can report a fake listing.',
+        ]);
+
+        $payload = [
+            'escort_external_id' => 29642,
+            'reason_code' => LandlordReportReason::FakeListing->value,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-escort', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
+
+        $response->assertCreated()->assertJsonPath('data.reason_code', LandlordReportReason::FakeListing->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29642,
+            'reason_code' => LandlordReportReason::FakeListing->value,
+        ]);
+    }
+
+    #[Test]
     public function landlord_can_record_multiple_escort_report_reasons_for_the_same_escort(): void
     {
         [$privateKey, $token, $landlord] = $this->createLandlordSession();

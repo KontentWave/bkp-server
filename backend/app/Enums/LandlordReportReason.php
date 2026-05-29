@@ -7,4 +7,5 @@ enum LandlordReportReason: string
     case Drugs = 'drugs';
     case Hygiene = 'hygiene';
     case DidNotPay = 'did_not_pay';
+    case FakeListing = 'fake_listing';
 }
