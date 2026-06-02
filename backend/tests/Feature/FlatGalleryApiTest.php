@@ -1161,6 +1161,88 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function escort_can_report_landlord_for_a_fake_listing(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111447');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Fake Listing Landlord Report Flat',
+            'description' => 'Escort can report a landlord for a fake listing.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4477'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $payload = ['reason_code' => EscortReportReason::FakeListing->value];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-landlord', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-landlord', $payload);
+
+        $response->assertCreated()->assertJsonPath('data.reason_code', EscortReportReason::FakeListing->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::FakeListing->value,
+        ]);
+    }
+
+    #[Test]
+    public function escort_can_report_landlord_disagreeing_with_accusations(): void
+    {
+        [$privateKey, $escort, $token] = $this->createEscortSession('+421900111446');
+        $landlord = Landlord::query()->create(['is_verified' => true]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Disputed Escort Report Flat',
+            'description' => 'Escort can dispute accusations from the landlord.',
+        ]);
+
+        Invitation::query()->create([
+            'landlord_id' => $landlord->id,
+            'phone_number' => $escort->phone_number,
+            'otp_token' => hash('sha256', '4476'),
+            'status' => InvitationStatus::Accepted,
+            'expires_at' => now()->addMinutes(10),
+        ]);
+
+        $payload = ['reason_code' => EscortReportReason::DisagreeWithAccusations->value];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-landlord', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-landlord', $payload);
+
+        $response->assertCreated()->assertJsonPath('data.reason_code', EscortReportReason::DisagreeWithAccusations->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_escort_id' => $escort->id,
+            'reported_landlord_id' => $landlord->id,
+            'reason_code' => EscortReportReason::DisagreeWithAccusations->value,
+        ]);
+    }
+
+    #[Test]
     public function escort_can_report_the_same_landlord_for_multiple_distinct_reasons(): void
     {
         [$privateKey, $escort, $token] = $this->createEscortSession('+421900111448');
@@ -1445,6 +1527,47 @@ class FlatGalleryApiTest extends TestCase
             'reported_escort_id' => $escort->id,
             'reported_escort_external_id' => 29642,
             'reason_code' => LandlordReportReason::FakeListing->value,
+        ]);
+    }
+
+    #[Test]
+    public function landlord_can_report_escort_disagreeing_with_accusations(): void
+    {
+        [$privateKey, $token, $landlord] = $this->createLandlordSession();
+        $escort = Escort::query()->create([
+            'external_id' => 29643,
+            'phone_number' => '+421900111452',
+            'public_key' => $this->generateEcKeyPair()[1],
+        ]);
+        $flat = Flat::query()->create([
+            'landlord_id' => $landlord->id,
+            'title' => 'Disputed Landlord Report Flat',
+            'description' => 'Landlord can dispute accusations from the escort.',
+        ]);
+
+        $payload = [
+            'escort_external_id' => 29643,
+            'reason_code' => LandlordReportReason::DisagreeWithAccusations->value,
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats/'.$flat->id.'/report-escort', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats/'.$flat->id.'/report-escort', $payload);
+
+        $response->assertCreated()->assertJsonPath('data.reason_code', LandlordReportReason::DisagreeWithAccusations->value);
+        $this->assertDatabaseHas('flat_reports', [
+            'flat_id' => $flat->id,
+            'reporter_landlord_id' => $landlord->id,
+            'reported_escort_id' => $escort->id,
+            'reported_escort_external_id' => 29643,
+            'reason_code' => LandlordReportReason::DisagreeWithAccusations->value,
         ]);
     }
 
