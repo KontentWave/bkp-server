@@ -58,6 +58,10 @@ return [
 
     'invitation' => [
         'otp_ttl_minutes' => env('INVITATION_OTP_TTL_MINUTES', 60),
+        'self_service_escort_requires_ad_target' => env(
+            'INVITATION_SELF_SERVICE_ESCORT_REQUIRES_AD_TARGET',
+            ! in_array(env('APP_ENV', 'production'), ['local', 'testing'], true)
+        ),
     ],
 
     'webshare' => [

@@ -76,6 +76,7 @@ class InvitationApiTest extends TestCase
     #[Test]
     public function self_service_escort_otp_request_creates_a_pending_invitation_without_scraping(): void
     {
+        config()->set('services.invitation.self_service_escort_requires_ad_target', false);
         config()->set('services.smstools.local_override_phone', null);
         Queue::fake();
 
@@ -92,6 +93,51 @@ class InvitationApiTest extends TestCase
             'phone_number' => '+421918273790',
             'invited_role' => 'escort',
             'escort_external_id' => null,
+            'status' => InvitationStatus::Pending->value,
+        ]);
+
+        Queue::assertPushed(SendSmsMessageJob::class);
+    }
+
+    #[Test]
+    public function self_service_escort_otp_request_requires_an_ad_target_when_configured(): void
+    {
+        config()->set('services.invitation.self_service_escort_requires_ad_target', true);
+
+        $response = $this->postJson('/api/request-otp', [
+            'phone_number' => '+421918273790',
+            'invited_role' => 'escort',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['escort_external_id', 'escort_ad_url']);
+    }
+
+    #[Test]
+    public function self_service_escort_otp_request_scrapes_and_persists_the_escort_ad_target(): void
+    {
+        config()->set('services.invitation.self_service_escort_requires_ad_target', true);
+        config()->set('services.smstools.local_override_phone', null);
+        Queue::fake();
+        $this->fakeEscortAdScraper([
+            29637 => $this->makeEscortAdSnapshot(29637, '+421918273790'),
+        ]);
+
+        $response = $this->postJson('/api/request-otp', [
+            'phone_number' => '0918273790',
+            'invited_role' => 'escort',
+            'escort_ad_url' => 'https://amaterky.sk/29637',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.invited_role', 'escort')
+            ->assertJsonPath('data.phone_number', '+421918273790');
+
+        $this->assertDatabaseHas('invitations', [
+            'phone_number' => '+421918273790',
+            'invited_role' => 'escort',
+            'escort_external_id' => 29637,
+            'escort_ad_url' => 'https://amaterky.sk/29637',
             'status' => InvitationStatus::Pending->value,
         ]);
 

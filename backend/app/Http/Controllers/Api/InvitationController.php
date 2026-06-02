@@ -29,6 +29,11 @@ class InvitationController extends Controller
         return (bool) config('services.amaterky.enforce_phone_match', true);
     }
 
+    private function shouldRequireSelfServiceEscortAdTarget(): bool
+    {
+        return (bool) config('services.invitation.self_service_escort_requires_ad_target', false);
+    }
+
     private function resolveSmsDeliveryPhoneNumber(string $targetPhoneNumber): string
     {
         $overridePhoneNumber = trim((string) config('services.smstools.local_override_phone', ''));
@@ -55,6 +60,28 @@ class InvitationController extends Controller
         $validated = $request->validate([
             'phone_number' => ['required', 'string', 'max:32'],
             'invited_role' => ['required', Rule::in(['escort', 'landlord'])],
+            'escort_external_id' => [
+                Rule::requiredIf(
+                    $request->input('invited_role') === 'escort'
+                    && $this->shouldRequireSelfServiceEscortAdTarget()
+                    && ! $request->filled('escort_ad_url')
+                ),
+                Rule::prohibitedIf($request->input('invited_role') === 'landlord'),
+                'nullable',
+                'integer',
+                'min:1',
+            ],
+            'escort_ad_url' => [
+                Rule::requiredIf(
+                    $request->input('invited_role') === 'escort'
+                    && $this->shouldRequireSelfServiceEscortAdTarget()
+                    && ! $request->filled('escort_external_id')
+                ),
+                Rule::prohibitedIf($request->input('invited_role') === 'landlord'),
+                'nullable',
+                'string',
+                'max:255',
+            ],
         ]);
 
         $normalizedPhoneNumber = $this->phoneNumberNormalizer->normalize($validated['phone_number']);
@@ -65,8 +92,50 @@ class InvitationController extends Controller
             ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
         }
 
+        $targetPhoneNumber = $normalizedPhoneNumber;
+        $escortExternalId = $validated['escort_external_id'] ?? null;
+        $escortAdUrl = $validated['escort_ad_url'] ?? null;
+        $phoneScrapedAt = null;
+
+        if (
+            $validated['invited_role'] === 'escort'
+            && ($escortExternalId !== null || $escortAdUrl !== null)
+        ) {
+            try {
+                $snapshot = $this->scrapeEscortInvitation($escortExternalId, $escortAdUrl);
+            } catch (EscortAdScrapeException $exception) {
+                $this->queueRetryForTransientEscortScrapeFailure(
+                    $exception,
+                    $escortExternalId,
+                    $escortAdUrl,
+                    'self-service-invitation',
+                );
+
+                return response()->json([
+                    'message' => $exception->getMessage(),
+                ], $exception->statusCode);
+            }
+
+            if (
+                $this->shouldEnforceEscortPhoneMatch()
+                && $normalizedPhoneNumber !== $snapshot->phoneNumber
+            ) {
+                return response()->json([
+                    'message' => 'The provided phone number does not match the current phone visible on the escort ad.',
+                ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY);
+            }
+
+            $targetPhoneNumber =
+                ! $this->shouldEnforceEscortPhoneMatch()
+                    ? $normalizedPhoneNumber
+                    : $snapshot->phoneNumber;
+            $escortExternalId = $snapshot->externalId;
+            $escortAdUrl = $snapshot->adUrl;
+            $phoneScrapedAt = $snapshot->scrapedAt;
+        }
+
         Invitation::query()
-            ->where('phone_number', $normalizedPhoneNumber)
+            ->where('phone_number', $targetPhoneNumber)
             ->where('invited_role', $validated['invited_role'])
             ->where('status', InvitationStatus::Pending)
             ->update([
@@ -76,10 +145,10 @@ class InvitationController extends Controller
         return $this->createInvitation(
             actor: null,
             invitedRole: $validated['invited_role'],
-            targetPhoneNumber: $normalizedPhoneNumber,
-            escortExternalId: null,
-            escortAdUrl: null,
-            phoneScrapedAt: null,
+            targetPhoneNumber: $targetPhoneNumber,
+            escortExternalId: $escortExternalId,
+            escortAdUrl: $escortAdUrl,
+            phoneScrapedAt: $phoneScrapedAt,
         );
     }
 
