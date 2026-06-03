@@ -51,6 +51,7 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Step 4.3 also freezes the tester-facing product rules that were still fluid during Step 4.2 implementation.
 - The mobile app should present a persistent first-run device mode choice for `landlord` or `escort` so non-technical testers are not dropped into an ambiguous mixed-role surface.
 - This tester-facing device mode must remain separate from the verified secure session metadata. The stored actor type still controls authorization, while the saved device mode controls the onboarding and navigation shape shown on the device.
+- The tester must be able to reset that saved device mode before OTP verification completes, so a mistaken first-run role choice is recoverable in-product instead of requiring reinstall or storage wipe.
 - OTP verification should reject a backend actor type that does not match the selected device mode rather than silently switching the device into the opposite tester path.
 - The invitation flow should now be treated as a shared verified action available from both roles after authentication instead of as a landlord-only developer utility.
 - The product should remain one mobile app per platform for now. A landlord-versus-escort app split is deferred until real usage demonstrates role confusion, divergent acquisition, stronger isolation requirements, or release-management pressure that the unified apps cannot absorb.
@@ -175,7 +176,9 @@ The work should not be treated as parallel rollout tasks. Each stage exists to r
 - Manual Android device validation now covers landlord bootstrap, escort OTP onboarding, invitation flow, gallery access, protected media actions, and moderation flows against the Laravel hardware-signature contract.
 - Android screenshot blocking is now implemented through `expo-screen-capture` for non-development builds, while development builds intentionally bypass the block so UI work and debugging remain practical.
 - The current Android runtime path is stabilized around `newArchEnabled=false` and a `FlatList` gallery fallback so the app works reliably in the present Expo SDK 54 / React Native 0.81 environment.
+- Long flat descriptions are now collapsed by default with an explicit expand/collapse affordance so production-length listing text does not dominate the first visible card area.
 - Report visibility is now aligned with product policy in the gallery surface: landlords see aggregate landlord-report state on owned flats, escorts retain only personal vote and landlord-report state, and reporter identity stays hidden from the reported side.
+- The device-role reset affordance is now visible before OTP verification completes, closing the earlier tester trap where a wrong first-run role choice could only be corrected by reinstalling the app.
 - Landlord-side reported-escort summaries are now additionally gated behind at least one published flat so a freshly authenticated landlord cannot browse moderation history before contributing a real listing.
 - Landlord-side reported-escort summaries are now global once that gate is passed: a participating landlord can see escort reports created by other landlords, including first-report incidents, while reporter identity still stays hidden in the mobile surface.
 - Landlord escort moderation now accepts either a raw public ad id or a pasted `amaterky.sk/<id>` URL, and the backend persists that external escort identifier even when no internal escort record exists yet.

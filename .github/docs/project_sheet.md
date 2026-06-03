@@ -455,6 +455,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Dispute reporting now has a credibility gate in the client:** `Nesuhlasim s obvineniami` stays disabled until there is already some prior report history for the target entity, which prevents empty first-contact dispute noise during pilot use.
 - **Local Android rehearsal is now documented as a stable developer path:** current device testing expects Laravel on port `8000`, Metro on `8081`, `adb reverse` for both ports, and `expo start --dev-client --localhost` so USB testing does not break on tunnel-host rewrites.
 - **Flat titles are now constrained to preserve gallery layout:** backend validation, landlord create/edit inputs, and the flat-card header all now enforce a practical 20-character title ceiling with truncation support instead of letting long names break the row layout.
+- **Long flat descriptions now stay readable without breaking card layout:** the gallery card now clamps `Popis` to two lines by default and expands or collapses on demand, so production-like listing text no longer blows out the first screenful.
+- **Pre-verification role mistakes are now recoverable in-app:** once a tester picks landlord or escort mode, the OTP screen now exposes an explicit role-reset action, so the device can return to role selection without reinstalling the app.
 - **Large-scale iOS rollout is now understood as a policy constraint rather than a build failure:** the iOS app remains technically buildable, but broad external distribution is still constrained by Apple review and distribution policy because reviewer-visible flows reference `amaterky.sk` escort listings.
 
 ### Step 4.3 Remaining Scope
