@@ -316,7 +316,7 @@ class FlatGalleryController extends Controller
     private function validateFlatPayload(Request $request): array
     {
         return $request->validate([
-            'title' => ['required', 'string', 'max:255'],
+            'title' => ['required', 'string', 'max:20'],
             'description' => ['required', 'string'],
             'municipality_id' => ['nullable', 'integer', 'exists:municipalities,id'],
             'contact.phone' => ['required', 'string', 'max:32'],

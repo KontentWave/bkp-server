@@ -763,6 +763,35 @@ class FlatGalleryApiTest extends TestCase
     }
 
     #[Test]
+    public function landlord_flat_creation_rejects_titles_longer_than_twenty_characters(): void
+    {
+        [$privateKey, $token] = $this->createLandlordSession();
+
+        $payload = [
+            'title' => 'Byt na prácu Prievidza 70/deň',
+            'description' => 'Valid description.',
+            'contact' => [
+                'phone' => '+421900333444',
+                'email' => 'contact@example.test',
+            ],
+        ];
+        $timestamp = (string) now()->timestamp;
+        $nonce = (string) Str::uuid();
+        $signature = $this->signHardwareRequest($payload, $privateKey, 'POST', '/api/flats', $timestamp, $nonce);
+
+        $response = $this->withToken($token)
+            ->withHeaders([
+                'X-Hardware-Nonce' => $nonce,
+                'X-Hardware-Timestamp' => $timestamp,
+                'X-Hardware-Signature' => $signature,
+            ])
+            ->postJson('/api/flats', $payload);
+
+        $response->assertUnprocessable()
+            ->assertJsonValidationErrors(['title']);
+    }
+
+    #[Test]
     public function guest_vote_is_hardware_signed(): void
     {
         [$privateKey, $escort, $token] = $this->createEscortSession('+421900111333');
