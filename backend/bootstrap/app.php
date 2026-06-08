@@ -3,6 +3,7 @@
 use App\Console\Commands\SyncProductionFlatsCommand;
 use App\Http\Middleware\EnsureSupportedClientVersion;
 use App\Http\Middleware\VerifyHardwareSignature;
+use App\Http\Middleware\VerifyTranslationWorkerToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'client.version' => EnsureSupportedClientVersion::class,
             'hardware.signature' => VerifyHardwareSignature::class,
+            'translation.worker' => VerifyTranslationWorkerToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

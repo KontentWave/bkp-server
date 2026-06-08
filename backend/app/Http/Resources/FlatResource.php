@@ -31,6 +31,7 @@ class FlatResource extends JsonResource
             'city' => $this->municipality?->name,
             'district' => $this->municipality?->district,
             'region' => $this->municipality?->region,
+            'translations' => $this->formatTranslations(),
             'contact' => [
                 'phone' => $this->contact_phone,
                 'email' => $this->contact_email,
@@ -48,5 +49,45 @@ class FlatResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * @return array<string, array<string, string>>
+     */
+    private function formatTranslations(): array
+    {
+        if (! $this->relationLoaded('flatTranslations')) {
+            return [];
+        }
+
+        $translations = [];
+
+        foreach ($this->flatTranslations as $translation) {
+            if (
+                ! is_string($translation->translated_text)
+                || trim($translation->translated_text) === ''
+                || $translation->status !== \App\Models\FlatTranslation::STATUS_READY
+            ) {
+                continue;
+            }
+
+            $sourceText = match ($translation->field_name) {
+                'title' => $this->title,
+                'description' => $this->description,
+                default => null,
+            };
+
+            if (! is_string($sourceText) || trim($sourceText) === '') {
+                continue;
+            }
+
+            if (! hash_equals(hash('sha256', trim($sourceText)), $translation->source_hash)) {
+                continue;
+            }
+
+            $translations[$translation->language][$translation->field_name] = $translation->translated_text;
+        }
+
+        return $translations;
     }
 }

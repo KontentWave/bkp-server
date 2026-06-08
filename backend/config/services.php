@@ -78,6 +78,25 @@ return [
         'ttl_seconds' => env('HARDWARE_SIGNATURE_TTL_SECONDS', 300),
     ],
 
+    'libretranslate' => [
+        'endpoint' => env('LIBRETRANSLATE_ENDPOINT'),
+        'api_key' => env('LIBRETRANSLATE_API_KEY'),
+        'connect_timeout' => env('LIBRETRANSLATE_CONNECT_TIMEOUT', 5),
+        'timeout' => env('LIBRETRANSLATE_TIMEOUT', 20),
+        'debug_response' => env('LIBRETRANSLATE_DEBUG_RESPONSE', false),
+    ],
+
+    'flat_translation' => [
+        'worker_token' => env('FLAT_TRANSLATION_WORKER_TOKEN'),
+        'target_languages' => array_values(array_filter(array_map(
+            static fn (string $language): string => trim($language),
+            explode(',', (string) env('FLAT_TRANSLATION_TARGET_LANGUAGES', 'en,ru,es')),
+        ))),
+        'job_batch_size' => env('FLAT_TRANSLATION_JOB_BATCH_SIZE', 20),
+        'upstream_base_url' => env('FLAT_TRANSLATION_UPSTREAM_BASE_URL'),
+        'provider_name' => env('FLAT_TRANSLATION_PROVIDER_NAME', 'local-libretranslate'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

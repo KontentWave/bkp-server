@@ -43,6 +43,130 @@ php artisan dev:sync-production-flats --chunk=100
 php artisan dev:sync-production-flats --copy-photos
 ```
 
+## Translation Proxy
+
+The backend now exposes a public translation proxy at `POST /api/translate`. The proxy forwards requests to a configured LibreTranslate-compatible endpoint.
+
+Required backend environment variables:
+
+- `LIBRETRANSLATE_ENDPOINT`
+- `LIBRETRANSLATE_API_KEY` when your provider requires one
+
+Optional backend environment variables:
+
+- `LIBRETRANSLATE_CONNECT_TIMEOUT=5`
+- `LIBRETRANSLATE_TIMEOUT=20`
+- `LIBRETRANSLATE_DEBUG_RESPONSE=false`
+
+Production wiring example:
+
+```env
+LIBRETRANSLATE_ENDPOINT=https://translate.example.com/translate
+LIBRETRANSLATE_API_KEY=
+LIBRETRANSLATE_DEBUG_RESPONSE=false
+```
+
+Then point the mobile app at BKP instead of LibreTranslate directly:
+
+```env
+EXPO_PUBLIC_TRANSLATION_API_URL=https://bkp-server.zafo-forum.sk/api/translate
+```
+
+### Local LibreTranslate Container
+
+For local development, run the included container recipe:
+
+```sh
+cd backend
+docker compose -f docker-compose.libretranslate.yml up -d
+```
+
+That exposes LibreTranslate on port `5000`.
+
+Local backend `.env` example:
+
+```env
+LIBRETRANSLATE_ENDPOINT=http://127.0.0.1:5000/translate
+LIBRETRANSLATE_API_KEY=
+LIBRETRANSLATE_DEBUG_RESPONSE=true
+```
+
+If the mobile device is using your local BKP backend over LAN or Windows portproxy exposure, keep the mobile translation URL pointing at BKP, not directly at the container:
+
+```env
+EXPO_PUBLIC_TRANSLATION_API_URL=http://192.168.1.50:8000/api/translate
+```
+
+### Debugging
+
+- Proxy successes are logged as `translation.proxy.succeeded`.
+- Proxy failures are logged as `translation.proxy.failed`.
+- When `LIBRETRANSLATE_DEBUG_RESPONSE=true`, `/api/translate` also returns a `debug` block and the `X-Translation-Proxy: bkp-libretranslate` header.
+
+### Flat Translation Cache Worker
+
+For low-cost operation, production can cache translated flat fields and let a local worker pull pending jobs from BKP, translate them on your own machine, and push the results back.
+
+Additional backend environment variables:
+
+```env
+FLAT_TRANSLATION_WORKER_TOKEN=replace-with-long-random-token
+FLAT_TRANSLATION_TARGET_LANGUAGES=en,ru,es
+FLAT_TRANSLATION_JOB_BATCH_SIZE=20
+FLAT_TRANSLATION_UPSTREAM_BASE_URL=https://bkp-server.zafo-forum.sk
+FLAT_TRANSLATION_PROVIDER_NAME=local-libretranslate
+```
+
+Worker endpoints:
+
+- `GET /api/internal/flat-translation-jobs?limit=20`
+- `POST /api/internal/flat-translation-jobs/{jobId}`
+
+Both endpoints require the header:
+
+```http
+X-Translation-Worker-Token: <FLAT_TRANSLATION_WORKER_TOKEN>
+```
+
+The polling endpoint returns pending `(flat_id, field_name, language)` jobs with `source_text` and `source_hash`.
+
+The completion endpoint accepts:
+
+```json
+{
+    "source_hash": "...",
+    "status": "ready",
+    "translated_text": "...",
+    "provider": "local-libretranslate"
+}
+```
+
+or a failed result:
+
+```json
+{
+    "source_hash": "...",
+    "status": "failed",
+    "failure_message": "timeout"
+}
+```
+
+`FlatResource` now returns a `translations` object containing only ready translations whose `source_hash` still matches the current flat source text.
+
+To process jobs from a local machine that already runs LibreTranslate, use the artisan command:
+
+```sh
+php artisan translations:sync-flat-cache --limit=20
+```
+
+That command is intended for cron. Example every minute:
+
+```cron
+* * * * * cd /home/marcel/projects/bkp-server/backend && php artisan translations:sync-flat-cache --limit=20 >> storage/logs/flat-translation-worker.log 2>&1
+```
+
+The command pulls pending jobs from `FLAT_TRANSLATION_UPSTREAM_BASE_URL`, translates them through the locally configured `LIBRETRANSLATE_ENDPOINT`, and posts either `ready` or `failed` back to production.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

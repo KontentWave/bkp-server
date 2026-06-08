@@ -64,7 +64,7 @@ class FlatGalleryController extends Controller
         if ($actor instanceof Landlord) {
             $reportedEscortSummaryAccess = $this->buildReportedEscortSummaryAccess($actor);
             $flats = Flat::query()
-                ->with(['photos', 'reports', 'municipality'])
+                ->with(['photos', 'reports', 'municipality', 'flatTranslations'])
                 ->withCount([
                     'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
                 ])
@@ -103,7 +103,7 @@ class FlatGalleryController extends Controller
         }
 
         $flats = $this->escortAccessibleFlatsQuery($actor)
-            ->with(['photos', 'reports', 'municipality'])
+            ->with(['photos', 'reports', 'municipality', 'flatTranslations'])
             ->withCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])
@@ -198,7 +198,7 @@ class FlatGalleryController extends Controller
         ]);
 
         return FlatResource::make(
-            $flat->load(['photos', 'municipality'])->loadCount([
+            $flat->load(['photos', 'municipality', 'flatTranslations'])->loadCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])->setAttribute('my_vote', null)
                 ->setAttribute('is_owned_by_viewer', true)
@@ -237,7 +237,7 @@ class FlatGalleryController extends Controller
         ]);
 
         return FlatResource::make(
-            $flat->fresh(['photos', 'municipality'])?->loadCount([
+            $flat->fresh(['photos', 'municipality', 'flatTranslations'])?->loadCount([
                 'votes as votes_count' => fn (Builder $query) => $query->where('is_favorite', true),
             ])?->setAttribute('my_vote', null)
                 ->setAttribute('is_owned_by_viewer', true)

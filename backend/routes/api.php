@@ -1,12 +1,20 @@
 <?php
 
 use App\Http\Controllers\Api\FlatGalleryController;
+use App\Http\Controllers\Api\FlatTranslationJobController;
 use App\Http\Controllers\Api\AdminLogController;
 use App\Http\Controllers\Api\AdminTokenController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\LandlordTokenController;
+use App\Http\Controllers\Api\TranslationController;
 use App\Http\Controllers\Api\VerificationController;
 use Illuminate\Support\Facades\Route;
+
+Route::post('/translate', [TranslationController::class, 'store']);
+Route::middleware('translation.worker')->prefix('internal')->group(function (): void {
+    Route::get('/flat-translation-jobs', [FlatTranslationJobController::class, 'index']);
+    Route::post('/flat-translation-jobs/{flatTranslation}', [FlatTranslationJobController::class, 'update']);
+});
 
 Route::middleware('client.version')->group(function (): void {
     Route::post('/admins/tokens', [AdminTokenController::class, 'store']);
