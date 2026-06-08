@@ -159,6 +159,18 @@ To process jobs from a local machine that already runs LibreTranslate, use the a
 php artisan translations:sync-flat-cache --limit=20
 ```
 
+Existing flats created before this feature was deployed will not have any queued translation rows yet. Seed them once with:
+
+```sh
+php artisan translations:backfill-flat-cache
+```
+
+Optional targeted backfill:
+
+```sh
+php artisan translations:backfill-flat-cache --flat-id=123 --flat-id=456
+```
+
 That command is intended for cron. Example every minute:
 
 ```cron
