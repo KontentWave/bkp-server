@@ -24,6 +24,7 @@ class LibreTranslateProxy
         }
 
         $texts = is_array($text) ? array_values($text) : [$text];
+        $requestText = is_array($text) ? $texts : $texts[0];
         $apiKey = trim((string) config('services.libretranslate.api_key', ''));
         $connectTimeout = (int) config('services.libretranslate.connect_timeout', 5);
         $timeout = (int) config('services.libretranslate.timeout', 20);
@@ -34,7 +35,7 @@ class LibreTranslateProxy
             ->connectTimeout($connectTimeout)
             ->timeout($timeout)
             ->post($endpoint, [
-                'q' => $texts,
+                'q' => $requestText,
                 'source' => $sourceLanguage,
                 'target' => $targetLanguage,
                 'format' => $format,

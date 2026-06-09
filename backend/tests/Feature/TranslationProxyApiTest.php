@@ -79,5 +79,11 @@ class TranslationProxyApiTest extends TestCase
             ->assertJsonPath('debug.endpoint', 'https://translate.example.test/translate')
             ->assertJsonPath('debug.target', 'en')
             ->assertJsonPath('debug.source', 'auto');
+
+        Http::assertSent(function ($request): bool {
+            return $request->url() === 'https://translate.example.test/translate'
+                && $request['q'] === 'Byt na prenajom'
+                && $request['target'] === 'en';
+        });
     }
 }
