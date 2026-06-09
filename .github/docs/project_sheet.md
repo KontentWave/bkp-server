@@ -289,6 +289,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
   ### Step 4.1 Contract Freeze Notes
   - The paginated `GET /api/flats` response shape is now treated as a frozen mobile contract and is covered by focused resource-shape assertions.
   - Bilateral reports are intentionally `write-edit`, not append-only: each actor updates their existing report for the same flat and counterpart instead of creating parallel duplicates.
+  - The strict escort visibility baseline remains invitation-linked access. A later operational pilot override may temporarily widen escort visibility through `FLAT_GALLERY_ENFORCE_ESCORT_INVITATION_ACCESS=false`; see [ADR/4_7_promotion_mode_escort_flat_access.md](ADR/4_7_promotion_mode_escort_flat_access.md).
 
 ### Step 4.1 Implementation Snapshot
 
@@ -375,7 +376,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 ## Step 4.3: Field Test Readiness (UI Polish & Android Parity)
 
 - **Status:** Partially completed for live production validation and pilot-distribution hardening on May 21, 2026. The UI clean-up slice, Android signer parity, Android runtime validation, deployed-backend reachability, Android and iOS escort onboarding, cross-role invitation recovery, role-aware local-versus-production routing, Android standalone tester distribution, and invitation OTP lifetime hardening are now proven or frozen. Broader closed-pilot rollout, large-scale iOS distribution, and the long-term escort identity redesign remain open.
-- **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md) and [ADR/4_5_pilot_distribution_environment_routing.md](ADR/4_5_pilot_distribution_environment_routing.md).
+- **Detailed Documentation:** See [ADR/4_3_field_test_readiness.md](ADR/4_3_field_test_readiness.md), [ADR/4_5_pilot_distribution_environment_routing.md](ADR/4_5_pilot_distribution_environment_routing.md), [ADR/4_7_promotion_mode_escort_flat_access.md](ADR/4_7_promotion_mode_escort_flat_access.md), and [ADR/4_8_multilingual_translation_architecture.md](ADR/4_8_multilingual_translation_architecture.md).
 - **Action:** Strip all developer diagnostic noise from the UI to create a confident, non-technical user experience, and implement the pending Android platform layer to enable end-to-end MVP testing.
 - **Platform Target:** Field testing must support both product contracts (Landlord and Escort) on both iOS and Android. Step 4.3 is not only about Android escorts; it is the parity and rollout-readiness step for the two-role mobile product across both platforms.
 - **Task:**
@@ -424,7 +425,9 @@ The critical architectural boundary is still Task 1, but it should now be treate
 
 - **Main entry flow cleaned up:** The invitation, landlord access, escort OTP, and gallery entry screens now use product-facing copy instead of developer transport framing, and the most visible bypass-style diagnostics have been removed from the primary tester path.
 - **Slovak copy now covers the main tester path:** The onboarding, invitation, and gallery shell copy is now localized into Slovak for the current real-user audience instead of leaving the core flow in English.
+- **The client is now explicitly multilingual:** the mobile app now supports Slovak, English, Russian, and Spanish through an in-app localization layer for core product UI and interaction copy.
 - **Cleaner gallery loading and empty states:** The flat gallery surface now shows explicit loading and empty states, better role-status messaging, and simpler landlord and escort action labels instead of debug-oriented feedback.
+- **Automatic flat translation is now part of the product contract:** flat `title` and `description` now prefer backend-provided cached translations and can still fall back to runtime translation when a compatible endpoint is configured.
 - **Android signer parity implemented:** The Expo local module `bkp-secure-signer` now includes an Android Kotlin implementation backed by Android Keystore / KeyMint-style APIs and exposes the same signer contract used on iOS.
 - **Android onboarding and protected actions validated on a real device:** Manual device testing confirmed landlord bootstrap, escort OTP verification, invitation flow, gallery access, vote/report flows, and protected media actions all work on Android against the Laravel signature contract.
 - **Android runtime path stabilized:** The Android path now runs with `newArchEnabled=false`, the secure signer module registered for Android, and the gallery surface rendered through a runtime-safe `FlatList` path so the app works reliably in the current Expo SDK 54 / React Native 0.81 setup.
@@ -442,6 +445,7 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **The current pilot lane is now broader than the initial escort-only rehearsal:** the product has already passed landlord-to-landlord, landlord-to-escort, escort onboarding, landlord reporting, escort reporting, and escort-to-landlord invitation validation on production.
 - **Role-aware environment routing is now explicit:** local development now routes landlord traffic to production and escort traffic to the local Laravel server, while shared tester builds route both roles to production so downloaded builds cannot accidentally point escorts at a developer's local machine.
 - **Production-like local rehearsal data is now supported operationally:** the backend now includes a production flat-sync command with optional photo-copy support so local escort and landlord rehearsals can use realistic listings, reports, votes, and gallery media when needed.
+- **Translation generation is now split between production storage and a local worker:** BKP can proxy live translation requests through `/api/translate`, but the preferred production flat-content path now stores ready translations in `flat_translations` and lets a local worker translate and sync them back to production.
 - **Protected photo delivery is now shared-hosting safe:** gallery images are now served through the backend media route instead of depending on public shared-hosting `/storage` exposure, because that storage path was not reliable in production.
 - **Late gallery polish is now in place for live testers:** flat headers now surface the city name, lists are grouped by region, region sections are collapsible, and each region heading shows the number of flats it contains.
 - **Invitation OTP lifetime is now one hour by default:** invitation creation now uses a configurable 60-minute OTP TTL, reducing friction when testers must download and install large mobile builds before activation.
@@ -449,6 +453,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **EAS tester builds are now pinned to the production backend:** preview and production build profiles inject production API base URLs for both landlord and escort roles, and the app config is aligned with `expo-updates` without duplicate iOS share-extension metadata.
 - **Self-service OTP onboarding is now live for both roles:** the mobile entry flow can now request an OTP directly without a pre-created invitation, which removes the old tester bottleneck where every new device had to be seeded manually first.
 - **Escort self-service now keeps a strict packaged-build trust boundary:** packaged builds require an escort ad URL or ad ID during OTP request, local development can still leave it optional, and the backend now scrapes and stores that target up front so verification can re-check the same escort identity instead of trusting only typed phone input.
+- **Promotion-mode escort gallery access is now an explicit rollout switch:** production can temporarily let every verified escort session see all flats by setting `FLAT_GALLERY_ENFORCE_ESCORT_INVITATION_ACCESS=false`, while the strict invitation-linked rule remains the default contract outside promotion mode.
+- **Translation failures are now explicit instead of silent:** the mobile app exposes runtime translation failure hints, the backend proxy logs translation success/failure, and debug responses can be enabled deliberately when diagnosing provider issues.
 - **Downloaded APK behavior is now explicit operationally:** any JavaScript or UI change still requires a rebuilt APK for sideload testers, because users who installed a shared standalone build do not receive live local Metro changes.
 - **Report archive review is now more actionable for landlords:** reported escorts are shown with clickable `Inzerat` links to `amaterky.sk/<id>`, the reporting flat surfaces its contact phone under `Ohlasovatel`, and that phone can be called directly from the app.
 - **Moderation reasons were expanded and role-shaped for live field use:** both sides now support `Nesuhlasim s obvineniami`, escort-side landlord reporting also supports `Podvod (neexistujuci byt)`, and the landlord-side UI intentionally keeps that fake-listing option hidden even though the backend enum can still recognize it.
@@ -465,6 +471,8 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **UI polish is intentionally not finished:** The app is now functionally coherent and much less developer-facing, but spacing, visual rhythm, and section consistency are deferred to a later polish slice instead of blocking the Android parity checkpoint.
 - **Production operations are not yet automated:** The current shared-hosting deployment still relies on explicit operational care for queue worker uptime and configuration-cache refreshes when SMS-provider settings change.
 - **Production SMS configuration still needs one manual guardrail:** `SMSTOOLS_LOCAL_OVERRIDE_PHONE` must stay empty outside local development so production OTP delivery is not silently diverted.
+- **Promotion-mode copy still needs a later polish pass:** while the backend override can expose all flats to escorts during promotion, the escort empty-state copy still explains the stricter invitation-linked model and should be adjusted if the override remains enabled for longer-term rollout.
+- **Multilingual translation remains operationally split by layer:** core UI localization is stable, but runtime fallback translation and cached flat-content translation still need to stay aligned so the product does not present contradictory behavior across fields.
 - **Escort identity redesign is now a mandatory follow-up expansion:** The current escort contract is sufficient for field testing, but it is no longer considered a durable production identity model because escorts can rotate ad IDs and phone numbers over time.
 - **Landlord report-visibility hardening is still future work:** The current `publish at least one flat first` gate is intentionally light for pilot use. A later anti-misuse hardening pass should require stronger landlord credibility signals, such as one flat confirmed by at least three registered escorts, before broader escort-report visibility is expanded.
 - **Current landlord report visibility is intentionally broad after the first gate:** The present field-test contract exposes globally shared landlord-side escort reports immediately after a landlord publishes at least one flat. Any stricter threshold belongs to a later hardening pass rather than the current pilot contract.
@@ -472,6 +480,183 @@ The critical architectural boundary is still Task 1, but it should now be treate
 - **Broad iOS pilot distribution remains unresolved at the policy layer:** Android can scale through standalone APK sideload distribution now, but large non-technical iPhone rollout still needs either a reviewer-safe product variant, an ad hoc or internal-device process, or acceptance of substantial Apple review risk.
 - **Pilot build-and-share operations still need a written runbook:** the team now has a working Android standalone distribution path and a constrained iOS path, but the exact tester-facing install instructions, build-replacement cadence, and invitation-only rollout procedure still need to be documented as an operational playbook.
 - **Client/server version compatibility gating is still pending:** the mobile app already carries `1.0.0`, but the backend still needs explicit per-platform support policy, version headers, and an obsolete-client blocking contract before rollout can rely on forced updates instead of manual support.
+
+### Step 4.3 Operational Notes
+
+#### Production-Like Local Flat Snapshot Sync
+
+Use `php artisan dev:sync-production-flats` to refresh the local `flats` and `flat_photos` tables from a separately configured production database connection.
+
+Required environment variables:
+
+- `PROD_SYNC_DB_DRIVER=pgsql` or `mysql` / `mariadb`
+- `PROD_SYNC_DB_HOST`, `PROD_SYNC_DB_PORT`, `PROD_SYNC_DB_DATABASE`, `PROD_SYNC_DB_USERNAME`, `PROD_SYNC_DB_PASSWORD`
+
+Alternative connection style:
+
+- `PROD_SYNC_DB_URL`
+
+Optional environment variables:
+
+- `PROD_SYNC_DB_SCHEMA=public`
+- `PROD_SYNC_DB_SSLMODE=prefer`
+- `PROD_SYNC_DB_CHARSET=utf8` for PostgreSQL or `utf8mb4` for MySQL / MariaDB
+- `PROD_SYNC_DB_COLLATION=utf8mb4_unicode_ci` for MySQL / MariaDB
+- `PROD_SYNC_FLAT_PHOTO_ROOT=/mounted/production/storage/app/public`
+
+Operational notes:
+
+- The command is local-only and exits in production.
+- It deletes local `flat_photos` and `flats` before importing the new snapshot.
+- Remote landlords are mapped to local placeholder landlord accounts shaped like `prod-sync-landlord-{remoteId}`.
+- Photo binaries are copied only when you pass `--copy-photos` and `PROD_SYNC_FLAT_PHOTO_ROOT` points at a readable production photo tree.
+
+Examples:
+
+```sh
+php artisan dev:sync-production-flats
+php artisan dev:sync-production-flats --chunk=100
+php artisan dev:sync-production-flats --copy-photos
+```
+
+#### Escort Flat Access Operations
+
+- By default, escorts only see flats for landlords whose invitation for that escort phone number has already reached `accepted` status.
+- That access rule is enforced by `GET /api/flats` in `FlatGalleryController::escortAccessibleFlatsQuery()` and is the strict production contract recorded in [ADR/4_1_flat_gallery_backend_contract.md](ADR/4_1_flat_gallery_backend_contract.md).
+- During promotion, production may temporarily disable that invitation gate with `FLAT_GALLERY_ENFORCE_ESCORT_INVITATION_ACCESS=false`.
+- When this flag is `false`:
+  - `GET /api/flats` returns all flats to authenticated escorts.
+  - Escort photo access and escort voting/reporting follow that broader flat visibility.
+  - Landlord authentication and flat ownership rules do not change.
+- After changing the flag in production, refresh cached config:
+
+```sh
+php artisan optimize:clear
+php artisan config:cache
+```
+
+#### Multilingual Translation Operations
+
+- The mobile app supports `sk`, `en`, `ru`, and `es`.
+- Relevant mobile environment variables:
+  - `EXPO_PUBLIC_API_BASE_URL`
+  - `EXPO_PUBLIC_API_BASE_URL_LANDLORD`
+  - `EXPO_PUBLIC_API_BASE_URL_ESCORT`
+  - `EXPO_PUBLIC_TRANSLATION_API_URL`
+  - `EXPO_PUBLIC_TRANSLATION_API_KEY`
+- `EXPO_PUBLIC_TRANSLATION_API_URL` may point either to BKP's `/api/translate` proxy or directly to a LibreTranslate-compatible service.
+- The endpoint must be reachable from the physical phone or emulator, not only from the laptop shell.
+- After changing public Expo env vars, restart the app or dev server so Expo reloads them.
+
+Laravel translation proxy configuration:
+
+- `LIBRETRANSLATE_ENDPOINT`
+- `LIBRETRANSLATE_API_KEY`
+- `LIBRETRANSLATE_CONNECT_TIMEOUT=5`
+- `LIBRETRANSLATE_TIMEOUT=20`
+- `LIBRETRANSLATE_DEBUG_RESPONSE=false`
+
+Runtime and debugging notes:
+
+- The mobile app currently supports JSON and form-encoded LibreTranslate-style requests.
+- The BKP proxy expects `LIBRETRANSLATE_ENDPOINT` to be configured on the Laravel side.
+- When the mobile app cannot translate, it now shows a visible failure hint instead of silently hiding the problem.
+- Proxy successes are logged as `translation.proxy.succeeded`.
+- Proxy failures are logged as `translation.proxy.failed`.
+- When `LIBRETRANSLATE_DEBUG_RESPONSE=true`, `/api/translate` also returns a `debug` block and the `X-Translation-Proxy: bkp-libretranslate` header.
+
+Local LibreTranslate container:
+
+```sh
+cd backend
+docker compose -f docker-compose.libretranslate.yml up -d
+```
+
+That exposes LibreTranslate on port `5000`.
+
+Local backend `.env` example:
+
+```env
+LIBRETRANSLATE_ENDPOINT=http://127.0.0.1:5000/translate
+LIBRETRANSLATE_API_KEY=
+LIBRETRANSLATE_DEBUG_RESPONSE=true
+```
+
+If the mobile device is using the local BKP backend over LAN or Windows portproxy exposure, keep the mobile translation URL pointing at BKP, not directly at the container.
+
+#### Cached Flat Translation Worker
+
+For low-cost operation, production can cache translated flat fields and let a local worker pull pending jobs from BKP, translate them on the developer's own machine, and push the results back.
+
+Additional backend environment variables:
+
+```env
+FLAT_TRANSLATION_WORKER_TOKEN=replace-with-long-random-token
+FLAT_TRANSLATION_TARGET_LANGUAGES=en,ru,es
+FLAT_TRANSLATION_JOB_BATCH_SIZE=20
+FLAT_TRANSLATION_UPSTREAM_BASE_URL=https://bkp-server.zafo-forum.sk
+FLAT_TRANSLATION_PROVIDER_NAME=local-libretranslate
+```
+
+Worker endpoints:
+
+- `GET /api/internal/flat-translation-jobs?limit=20`
+- `POST /api/internal/flat-translation-jobs/{jobId}`
+
+Both endpoints require the header:
+
+```http
+X-Translation-Worker-Token: <FLAT_TRANSLATION_WORKER_TOKEN>
+```
+
+The polling endpoint returns pending `(flat_id, field_name, language)` jobs with `source_text` and `source_hash`.
+
+The completion endpoint accepts either a ready result:
+
+```json
+{
+  "source_hash": "...",
+  "status": "ready",
+  "translated_text": "...",
+  "provider": "local-libretranslate"
+}
+```
+
+or a failed result:
+
+```json
+{
+  "source_hash": "...",
+  "status": "failed",
+  "failure_message": "timeout"
+}
+```
+
+`FlatResource` returns a `translations` object containing only ready translations whose `source_hash` still matches the current flat source text.
+
+To process jobs from a local machine that already runs LibreTranslate, use:
+
+```sh
+php artisan translations:sync-flat-cache --limit=20
+```
+
+Existing flats created before this feature was deployed will not have queued translation rows yet. Seed them once with:
+
+```sh
+php artisan translations:backfill-flat-cache
+```
+
+Optional targeted backfill:
+
+```sh
+php artisan translations:backfill-flat-cache --flat-id=123 --flat-id=456
+```
+
+Example cron every minute:
+
+```cron
+* * * * * cd /home/marcel/projects/bkp-server/backend && php artisan translations:sync-flat-cache --limit=20 >> storage/logs/flat-translation-worker.log 2>&1
+```
 
 ### Mandatory Post-Pilot Expansion: Stable Escort Identity With Alias History
 
